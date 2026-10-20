@@ -213,9 +213,9 @@ export async function deleteSuggestion(sid) {
 
 /* ---------- Opening & Closing checklists ---------- */
 const clTemplates = fresh ? {} : {
-  opening: { name: "Opening", items: ["Turn on lights, music and TVs", "Count the drawer", "Make the first kava batch", "Check fridge temps", "Wipe down the bar and tables", "Unlock the door and flip the sign"].map((text, i) => ({ id: `o${i}`, text })) },
+  opening: { name: "Opening", items: ["Turn on lights, music and TVs", "Count the drawer", "Make the first kava batch", "Check fridge temps", "Wipe down the bar and tables", "Unlock the door and flip the sign"].map((text, i) => ({ id: `o${i}`, text, priority: i === 1 || i === 3 ? "critical" : "normal" })) },
   shift: { name: "Shift Change", items: ["Count the drawer", "Restock cups and lids", "Check kava levels — make a batch if under half", "Hand off notes to next kavatender"].map((text, i) => ({ id: `s${i}`, text })) },
-  closing: { name: "Closing", items: ["Last call announced", "Clean and sanitize the shells and pitchers", "Wipe down the bar", "Restock the fridge", "Take out trash and recycling", "Sweep and mop", "Count the drawer and drop", "Lights off, lock up"].map((text, i) => ({ id: `c${i}`, text })) },
+  closing: { name: "Closing", items: ["Last call announced", "Clean and sanitize the shells and pitchers", "Wipe down the bar", "Keg count", "Turn off the TVs", "Take out trash and recycling", "Sweep and mop", "Count the drawer and drop", "Lights off, lock up"].map((text, i) => ({ id: `c${i}`, text, priority: ["Keg count", "Count the drawer and drop", "Lights off, lock up"].includes(text) ? "critical" : text === "Turn off the TVs" ? "low" : "normal" })) },
 };
 const clDays = {}; // `${date}_${listId}` -> run
 {
@@ -231,14 +231,14 @@ const clDays = {}; // `${date}_${listId}` -> run
     };
     run(y, "opening", "Josh", [0, 1, 2, 3, 4, 5], 9);
     run(y, "shift", "Daniel", [0, 1, 2, 3], 15);
-    run(y, "closing", "Wheatyn", [0, 1, 2, 4, 6, 7], 22);
+    run(y, "closing", "Wheatyn", [0, 1, 2, 5, 7, 8], 22);
     run(t, "opening", "Daniel", [0, 1, 2], 9);
   }
 }
 export function watchChecklistTemplates(cb) { return watch(() => cb(structuredClone(clTemplates))); }
 export async function saveChecklistTemplate(listId, { name, items }) {
   await wait(150);
-  clTemplates[listId] = { name, items: items.map(({ id, text }) => ({ id, text })) };
+  clTemplates[listId] = { name, items: items.map(({ id, text, priority }) => ({ id, text, priority: priority || "normal" })) };
   changed();
 }
 export function watchChecklistDay(dateKey, cb) {

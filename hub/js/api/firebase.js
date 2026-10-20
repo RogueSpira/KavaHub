@@ -136,7 +136,7 @@ export function watchChecklistTemplates(cb) {
     (e) => { console.warn("[hub] checklist lists", e); cb(null, e); });
 }
 export const saveChecklistTemplate = (listId, { name, items }) =>
-  F.setDoc(docRef(`${CL}/lists/${listId}`), { name, items: items.map(({ id, text }) => ({ id, text })) });
+  F.setDoc(docRef(`${CL}/lists/${listId}`), { name, items: items.map(({ id, text, priority }) => ({ id, text, priority: priority || "normal" })) });
 
 // Live view of one business day: { opening, shift, closing } (each null until something is checked).
 export function watchChecklistDay(dateKey, cb) {
@@ -149,7 +149,7 @@ export function watchChecklistDay(dateKey, cb) {
 export function setChecklistItem(session, { dateKey, dayStart, listId, listName, items }, item, checked) {
   return F.setDoc(docRef(`${CL}/days/${dateKey}_${listId}`), {
     date: dateKey, listId, listName, dayStart,
-    items: items.map(({ id, text }) => ({ id, text })),
+    items: items.map(({ id, text, priority }) => ({ id, text, priority: priority || "normal" })),
     checks: { [item.id]: checked
       ? { text: item.text, by: session.me.name, byUid: session.uid, at: F.serverTimestamp() }
       : F.deleteField() },

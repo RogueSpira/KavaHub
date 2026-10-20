@@ -4,9 +4,17 @@
 import { h, clear, modal, field } from "../../js/ui.js";
 import {
   LISTS, listMeta, businessKey, prevKey, dayStartOf, dayLabel, timeLabel, defaultList, summarize, newItemId,
+  PRIORITIES, priorityOf,
 } from "./days.js";
 
 const emptyTemplate = (id) => ({ name: listMeta(id).name, items: [] });
+// Small tag shown next to Critical and Low items (Normal items get none).
+function priorityTag(item) {
+  const p = priorityOf(item);
+  if (p === "critical") return h("span", { class: "chip pr-critical" }, "Critical");
+  if (p === "low") return h("span", { class: "chip pr-low" }, "Low");
+  return null;
+}
 
 export function mount(el, ctx) {
   const manage = ctx.level >= 2;
@@ -83,10 +91,10 @@ function today(pane, ctx) {
   }
 
   function row(item, check) {
-    const btn = h("button", { type: "button", class: `cl-row${check ? " checked" : ""}`, role: "checkbox", "aria-checked": String(!!check),
+    const btn = h("button", { type: "button", class: `cl-row pr-${priorityOf(item)}${check ? " checked" : ""}`, role: "checkbox", "aria-checked": String(!!check),
       onclick: () => toggle(item, !check) },
       h("span", { class: "cl-box", "aria-hidden": "true" }, check ? "✓" : ""),
-      h("span", { class: "cl-text" }, item.text, item.removed ? h("span", { class: "chip" }, "Removed from list") : null),
+      h("span", { class: "cl-text" }, item.text, priorityTag(item), item.removed ? h("span", { class: "chip" }, "Removed from list") : null),
       check ? h("span", { class: "cl-who" }, `${check.by} · ${timeLabel(check.at)}`) : null);
     return btn;
   }
@@ -110,13 +118,18 @@ function today(pane, ctx) {
     if (lastNight === undefined) return;
     const yKey = prevKey(key);
     const s = summarize(lastNight, null);
-    const card = h("details", { class: `card cl-last${lastNight && s.skipped.length ? " warn" : ""}` });
+    const level = !lastNight ? "warn" : s.skippedCritical.length ? "critical" : s.skippedOther.length ? "warn" : "";
+    const card = h("details", { class: `card cl-last${level ? " " + level : ""}` });
     let summary;
     if (!lastNight) summary = h("span", {}, h("b", {}, "Last night's close"), ` · ${dayLabel(yKey, { weekday: "short", month: "short", day: "numeric" })} — `, h("span", { class: "warn-text" }, "the closing list wasn't started."));
     else if (!s.skipped.length) summary = h("span", {}, h("b", {}, "Last night's close"), ` · ${dayLabel(yKey, { weekday: "short", month: "short", day: "numeric" })} — `, h("span", { class: "ok-text" }, `all ${s.total} done ✓`));
-    else summary = h("span", {}, h("b", {}, "Last night's close"), ` · ${dayLabel(yKey, { weekday: "short", month: "short", day: "numeric" })} — ${s.done} of ${s.total} done, `,
-      h("span", { class: "warn-text" }, `${s.skipped.length} skipped:`),
-      h("span", { class: "cl-skipped-names" }, s.skipped.map((i) => h("span", { class: "chip chip-soon" }, i.text))));
+    else {
+      const names = (list, cls) => h("span", { class: "cl-skipped-names" }, list.map((i) => h("span", { class: `chip ${cls}` }, i.text)));
+      summary = h("span", {}, h("b", {}, "Last night's close"), ` · ${dayLabel(yKey, { weekday: "short", month: "short", day: "numeric" })} — ${s.done} of ${s.total} done`,
+        s.skippedCritical.length ? h("span", { class: "cl-skip-line" }, h("span", { class: "crit-text" }, `⚠ ${s.skippedCritical.length} critical skipped:`), names(s.skippedCritical, "pr-critical")) : null,
+        s.skippedOther.length ? h("span", { class: "cl-skip-line" }, h("span", { class: "warn-text" }, `${s.skippedOther.length} skipped:`), names(s.skippedOther, "chip-soon")) : null,
+        s.skippedLow.length ? h("span", { class: "cl-skip-line" }, h("span", { class: "muted" }, `${s.skippedLow.length} low-priority skipped:`), names(s.skippedLow, "pr-low")) : null);
+    }
     card.append(h("summary", {}, h("span", { class: "cl-last-sum" }, summary, lastNight ? h("span", { class: "muted small cl-last-hint" }, "Tap to see the whole list") : null)));
     if (lastNight) card.append(readOnlyList(lastNight));
     lastCard.append(card);
@@ -145,15 +158,17 @@ function today(pane, ctx) {
 }
 
 /* Read-only view of a saved list run: who checked what, and what was skipped. */
-function readOnlyList(run) {
+// inProgress = it's still that business day, so unchecked items aren't "skipped" yet.
+function readOnlyList(run, inProgress = false) {
   const s = summarize(run, null);
   const list = h("div", { class: "cl-list readonly" });
   for (const it of s.items) {
     const c = s.checks[it.id];
-    list.append(h("div", { class: `cl-row${c ? " checked" : " skipped"}` },
-      h("span", { class: "cl-box", "aria-hidden": "true" }, c ? "✓" : "!"),
-      h("span", { class: "cl-text" }, it.text),
-      h("span", { class: "cl-who" }, c ? `${c.by} · ${timeLabel(c.at)}` : "Skipped")));
+    const p = priorityOf(it);
+    list.append(h("div", { class: `cl-row pr-${p}${c ? " checked" : inProgress ? "" : " skipped"}` },
+      h("span", { class: "cl-box", "aria-hidden": "true" }, c ? "✓" : inProgress ? "" : p === "low" ? "–" : "!"),
+      h("span", { class: "cl-text" }, it.text, priorityTag(it)),
+      h("span", { class: "cl-who" }, c ? `${c.by} · ${timeLabel(c.at)}` : inProgress ? "Not done yet" : p === "critical" ? "Skipped — critical" : "Skipped")));
   }
   for (const [k, c] of Object.entries(s.checks)) {
     if (s.items.some((i) => i.id === k)) continue;
@@ -187,9 +202,11 @@ function history(pane, ctx) {
           h("span", { class: "row-main" }, h("span", { class: "row-title" }, dayLabel(date)),
             h("span", { class: "cl-chips" }, LISTS.map((l) => {
               const r = lists[l.id];
-              if (!r) return h("span", { class: "chip chip-off" }, `${l.name}: not started`);
+              if (!r) return h("span", { class: `chip ${date === businessKey() ? "" : "chip-off"}` }, `${l.name}: not started`);
               const s = summarize(r, null);
-              return h("span", { class: `chip ${s.skipped.length ? "chip-soon" : "chip-ok"}` }, `${l.name}: ${s.done}/${s.total}`);
+              if (date === businessKey() && s.skipped.length) return h("span", { class: "chip" }, `${l.name}: ${s.done}/${s.total} so far`);
+              const cls = s.skippedCritical.length ? "pr-critical" : s.skippedOther.length ? "chip-soon" : "chip-ok";
+              return h("span", { class: `chip ${cls}` }, `${s.skippedCritical.length ? "⚠ " : ""}${l.name}: ${s.done}/${s.total}`);
             }))),
           h("span", { class: "row-go", "aria-hidden": "true" }, "›")));
       }
@@ -207,13 +224,17 @@ function dayDetail(pane, ctx, dateKey) {
   const stop = ctx.api.watchChecklistDay(dateKey, (d, err) => {
     clear(body);
     if (err || !d) { body.append(h("p", { class: "modal-err" }, "Couldn't load that day.")); return; }
+    const live = dateKey === businessKey();
     for (const l of LISTS) {
       const r = d[l.id];
       const s = summarize(r, null);
+      const flagged = !live && s.skippedCritical.length;
       body.append(h("section", { class: "card cl-day-card" },
         h("h3", {}, `${l.icon} ${r?.listName || l.name}`,
-          h("span", { class: `chip ${!r ? "chip-off" : s.skipped.length ? "chip-soon" : "chip-ok"}` }, !r ? "Not started" : `${s.done} / ${s.total}`)),
-        r ? readOnlyList(r) : null));
+          h("span", { class: `chip ${!r ? (live ? "" : "chip-off") : live && s.skipped.length ? "" : flagged ? "pr-critical" : s.skippedOther.length ? "chip-soon" : "chip-ok"}` },
+            !r ? "Not started" : `${s.done} / ${s.total}${live && s.skipped.length ? " so far" : ""}`),
+          flagged ? h("span", { class: "crit-text small" }, `⚠ ${s.skippedCritical.length} critical skipped`) : null),
+        r ? readOnlyList(r, live) : null));
     }
   });
   return () => stop();
@@ -226,7 +247,7 @@ function editor(pane, ctx) {
   const listSel = h("div", { class: "seg" });
   const body = h("div", { class: "cl-editor" });
   pane.append(h("div", { class: "pane-head" },
-    h("p", { class: "muted" }, "Changes apply from the next check-off. Past days keep the list as it was."), listSel), body);
+    h("p", { class: "muted" }, "Set each item's priority: Critical items are flagged in red if skipped, Low items are fine if forgotten. Changes apply from the next check-off; past days keep the list as it was."), listSel), body);
 
   function pickList(id) {
     if (dirty && !window.confirm("You have unsaved changes to this list. Discard them?")) return;
@@ -245,8 +266,11 @@ function editor(pane, ctx) {
       const input = h("input", { class: "input", type: "text", value: it.text, maxlength: "200", "aria-label": `Item ${i + 1}`,
         oninput: (e) => { it.text = e.target.value; markDirty(); },
         onkeydown: (e) => { if (e.key === "Enter") { e.preventDefault(); addItem(i + 1); } } });
+      const pr = h("select", { class: `input cl-pr-select pr-${priorityOf(it)}`, "aria-label": `Priority for item ${i + 1}`,
+        onchange: (e) => { it.priority = e.target.value; e.target.className = `input cl-pr-select pr-${it.priority}`; markDirty(); } },
+        PRIORITIES.map((o) => h("option", { value: o.value, selected: priorityOf(it) === o.value }, o.label)));
       rows.append(h("div", { class: "cl-edit-row" },
-        h("span", { class: "cl-edit-num" }, i + 1), input,
+        h("span", { class: "cl-edit-num" }, i + 1), input, pr,
         h("button", { class: "icon-btn", type: "button", "aria-label": "Move up", disabled: i === 0, onclick: () => move(i, -1) }, "↑"),
         h("button", { class: "icon-btn", type: "button", "aria-label": "Move down", disabled: i === draft.items.length - 1, onclick: () => move(i, 1) }, "↓"),
         h("button", { class: "icon-btn", type: "button", "aria-label": "Delete item", onclick: () => { draft.items.splice(i, 1); markDirty(); paint(); } }, "✕")));
@@ -265,22 +289,26 @@ function editor(pane, ctx) {
     function markDirty() { if (!dirty) { dirty = true; save.disabled = false; } }
   }
   function addItem(at) {
-    draft.items.splice(at, 0, { id: newItemId(), text: "" });
+    draft.items.splice(at, 0, { id: newItemId(), text: "", priority: "normal" });
     dirty = true; paint();
     body.querySelectorAll(".cl-edit-row input")[at]?.focus();
   }
   function move(i, d) { [draft.items[i], draft.items[i + d]] = [draft.items[i + d], draft.items[i]]; dirty = true; paint(); }
   async function pasteMany() {
     const ta = h("textarea", { class: "input textarea", rows: "8", placeholder: "One item per line" });
-    const ok = await modal({ title: "Paste several items", body: h("div", { class: "form" }, field("Items", ta, "Each line becomes an item at the end of the list.")),
+    const ok = await modal({ title: "Paste several items", body: h("div", { class: "form" }, field("Items", ta, "Each line becomes an item at the end of the list. Start a line with ! to make it Critical, or ~ to make it Low.")),
       actions: [{ label: "Cancel", kind: "ghost", value: false }, { label: "Add items", kind: "primary", value: true }] });
     if (!ok) return;
-    const lines = ta.value.split("\n").map((s) => s.replace(/^[\s\-•*\d.)]+/, "").trim()).filter(Boolean).map((s) => s.slice(0, 200));
-    draft.items.push(...lines.map((text) => ({ id: newItemId(), text })));
+    // A line starting with "!" becomes Critical; "~" becomes Low.
+    const lines = ta.value.split("\n").map((s) => s.replace(/^[\s\-•*\d.)]+/, "").trim()).filter(Boolean);
+    draft.items.push(...lines.map((line) => {
+      const priority = line.startsWith("!") ? "critical" : line.startsWith("~") ? "low" : "normal";
+      return { id: newItemId(), text: line.replace(/^[!~]\s*/, "").slice(0, 200), priority };
+    }).filter((i) => i.text));
     dirty = true; paint();
   }
   async function doSave() {
-    const items = draft.items.map((i) => ({ id: i.id, text: i.text.trim() })).filter((i) => i.text);
+    const items = draft.items.map((i) => ({ id: i.id, text: i.text.trim(), priority: priorityOf(i) })).filter((i) => i.text);
     const name = (draft.name || "").trim() || listMeta(current).name;
     if (items.length > 150) { toast("Lists can have up to 150 items.", "err"); return; }
     try {

@@ -49,7 +49,21 @@ export function summarize(run, template) {
   const items = run?.items?.length ? run.items : (template?.items || []);
   const checks = run?.checks || {};
   const done = items.filter((i) => checks[i.id]).length;
-  return { items, checks, done, total: items.length, skipped: items.filter((i) => !checks[i.id]) };
+  const skipped = items.filter((i) => !checks[i.id]);
+  return {
+    items, checks, done, total: items.length, skipped,
+    skippedCritical: skipped.filter((i) => i.priority === "critical"),
+    skippedOther: skipped.filter((i) => i.priority !== "critical" && i.priority !== "low"),
+    skippedLow: skipped.filter((i) => i.priority === "low"),
+  };
 }
 
 export const newItemId = () => Math.random().toString(36).slice(2, 10);
+
+// Item priorities, set per item in Edit lists.
+export const PRIORITIES = [
+  { value: "critical", label: "Critical" },
+  { value: "normal", label: "Normal" },
+  { value: "low", label: "Low" },
+];
+export const priorityOf = (item) => (item?.priority === "critical" || item?.priority === "low" ? item.priority : "normal");
