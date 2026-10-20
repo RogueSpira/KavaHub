@@ -295,3 +295,45 @@ export async function saveArticle(session, aid, { title, category, body }) {
   kb.push(a); changed(); return a.id;
 }
 export async function deleteArticle(aid) { await wait(100); const i = kb.findIndex((a) => a.id === aid); if (i >= 0) kb.splice(i, 1); changed(); }
+
+/* ---------- pictures ---------- */
+// Demo: nothing is uploaded; the picture stays in the page as-is.
+export async function uploadImage(_tool, dataUrl) { await wait(300); return dataUrl; }
+
+/* ---------- TV Screens ---------- */
+const tv = {};
+{
+  const { sampleTv } = await import("../tv-sample.js");
+  if (!fresh) for (const [k, v] of Object.entries(sampleTv())) if (v !== undefined) tv[k] = v;
+}
+const tvCanEdit = (docId) => {
+  const u = me(); if (!u) return false;
+  const lvl = u.roleId === "owner" ? 2 : (u.overrides.tv ?? store.roles[u.roleId]?.perms.tv ?? 0);
+  if (lvl >= 2) return true;
+  if (docId === "config" || lvl < 1) return false;
+  return tv.config ? (tv.config.perms?.[docId] || []).includes(u.roleId) : docId === "crew";
+};
+export function watchTv(cb) { return watch(() => cb(structuredClone(tv))); }
+export async function saveTv(docId, data) {
+  await wait(120);
+  if (!tvCanEdit(docId)) throw new Error("Missing or insufficient permissions.");
+  tv[docId] = structuredClone(data); changed();
+}
+function deepMerge(a, b) {
+  const out = { ...(a || {}) };
+  for (const [k, v] of Object.entries(b)) out[k] = v && typeof v === "object" && !Array.isArray(v) && !(v instanceof Date) ? deepMerge(out[k], v) : v;
+  return out;
+}
+export async function mergeTv(docId, data) {
+  await wait(100);
+  if (!tvCanEdit(docId)) throw new Error("Missing or insufficient permissions.");
+  tv[docId] = deepMerge(tv[docId], structuredClone(data)); changed();
+}
+export async function clearTvField(docId, path) {
+  await wait(80);
+  if (!tvCanEdit(docId)) throw new Error("Missing or insufficient permissions.");
+  const parts = path.split("."); let o = tv[docId];
+  for (const p of parts.slice(0, -1)) o = o?.[p];
+  if (o) delete o[parts.at(-1)];
+  changed();
+}

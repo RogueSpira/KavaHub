@@ -106,6 +106,24 @@ service cloud.firestore {
           || (can(loc, 'suggestions', 1) && resource.data.authorUid == request.auth.uid && resource.data.status == 'new');
       }
 
+      // TV Screens: what the TVs show. Anyone can read it (the TVs aren't signed in, and it's
+      // shown on public screens anyway). Manage on TV Screens edits everything; a role given a
+      // section in TV Screens → Permissions can edit that section. Until permissions are set,
+      // anyone with Use can edit "crew" (who's working).
+      match /tv/{docId} {
+        function tvConfigPath() { return /databases/$(database)/documents/locations/$(loc)/tv/config; }
+        function sectionEditor(section) {
+          return can(loc, 'tv', 2)
+            || (can(loc, 'tv', 1) && (exists(tvConfigPath())
+                  ? get(tvConfigPath()).data.get('perms', {}).get(section, []).hasAny([me(loc).roleId])
+                  : section == 'crew'));
+        }
+        allow read: if true;
+        allow write: if (docId == 'config' && can(loc, 'tv', 2))
+          || (docId in ['crew', 'events', 'happyhour', 'specials', 'signature', 'products', 'community', 'ticker', 'welcome', 'qr']
+              && sectionEditor(docId));
+      }
+
       // Knowledge Bank: Use reads; Manage writes, edits and deletes.
       match /tools-data/knowledge/articles/{id} {
         function validArticle(d) {

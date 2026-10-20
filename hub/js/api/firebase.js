@@ -201,3 +201,21 @@ export async function saveArticle(session, id, { title, category, body }) {
   return ref.id;
 }
 export const deleteArticle = (id) => F.deleteDoc(F.doc(kbCol(), id));
+
+/* ---------- pictures (stored in Netlify Blobs by the hub's server function) ---------- */
+// dataUrl comes from shrinkImage(). Returns the address to use in the article.
+export const uploadImage = async (tool, dataUrl) => (await call("mediaUpload", { tool, data: dataUrl })).src;
+
+/* ---------- TV Screens (locations/{loc}/tv/{docId}) ---------- */
+// Everything the TVs show, as { docId: data }.
+export function watchTv(cb) {
+  return F.onSnapshot(col("tv"),
+    (q) => cb(Object.fromEntries(q.docs.map((d) => [d.id, d.data(EST)]))),
+    (e) => { console.warn("[hub] tv", e); cb(null, e); });
+}
+// Replace one section's content (lists are saved whole).
+export const saveTv = (docId, data) => F.setDoc(docRef(`tv/${docId}`), data);
+// Change part of a section without touching the rest (e.g. today's crew).
+export const mergeTv = (docId, data) => F.setDoc(docRef(`tv/${docId}`), data, { merge: true });
+// Remove a field inside a section, e.g. clear today's crew change: path "days.2026-10-20".
+export const clearTvField = (docId, path) => F.updateDoc(docRef(`tv/${docId}`), { [path]: F.deleteField() });

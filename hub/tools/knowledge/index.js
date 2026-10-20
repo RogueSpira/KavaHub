@@ -6,6 +6,7 @@
 //   #/tool/knowledge/edit/<id>  edit (Manage)
 import { h, clear, confirm, field, timeAgo } from "../../js/ui.js";
 import { render, snippet, FORMAT_HELP } from "./format.js";
+import { shrinkImage } from "../../js/images.js";
 
 const DEFAULT_CATEGORIES = ["How-To", "Recipes", "Knowledge"];
 const MAX_BODY = 20000;
@@ -110,6 +111,12 @@ function editorView(el, ctx, id, getArticles) {
   const preview = h("div", { class: "card kb-preview" });
   const previewBtn = h("button", { class: "btn", type: "button", onclick: () => { previewing = !previewing; paintPreview(); } }, "Preview");
   const save = h("button", { class: "btn primary", type: "button", onclick: doSave }, id ? "Save changes" : "Publish article");
+  // Photos: pick one (on an iPad this offers the camera too), paste, or drag onto the article.
+  let uploading = 0;
+  const photoStatus = h("span", { class: "muted small", "aria-live": "polite" });
+  const fileIn = h("input", { type: "file", accept: "image/*", multiple: true, hidden: true,
+    onchange: (e) => { addPhotos([...e.target.files]); e.target.value = ""; } });
+  const photoBtn = h("button", { class: "btn", type: "button", onclick: () => fileIn.click() }, "📷 Add photo");
   const err = h("div", { class: "modal-err", role: "alert" });
   const help = h("details", { class: "kb-help" }, h("summary", {}, "Formatting tips"),
     h("div", { class: "kb-help-grid" }, FORMAT_HELP.map(([code, what]) => [h("code", {}, code), h("span", {}, what)])));
@@ -117,8 +124,41 @@ function editorView(el, ctx, id, getArticles) {
   el.append(h("button", { class: "btn ghost small", type: "button", onclick: () => ctx.navigate(id ? `${ctx.base}/a/${id}` : ctx.base) }, "← Cancel"),
     h("h2", { class: "cl-date" }, id ? "Edit article" : "New article"),
     h("div", { class: "form kb-form" }, datalist, field("Title", title), field("Category", category),
-      h("div", { class: "field" }, h("span", { class: "field-label" }, "Article"), bodyIn, help), preview,
+      h("div", { class: "field" }, h("span", { class: "field-label" }, "Article"),
+        h("div", { class: "kb-photo-bar" }, photoBtn, fileIn, photoStatus), bodyIn, help), preview,
       err, h("div", { class: "cl-edit-actions" }, previewBtn, h("span", { class: "spacer" }), save)));
+
+  bodyIn.addEventListener("paste", (e) => {
+    const files = [...(e.clipboardData?.items || [])].filter((i) => i.kind === "file" && i.type.startsWith("image/")).map((i) => i.getAsFile());
+    if (files.length) { e.preventDefault(); addPhotos(files); }
+  });
+  bodyIn.addEventListener("dragover", (e) => { if ([...(e.dataTransfer?.items || [])].some((i) => i.kind === "file")) e.preventDefault(); });
+  bodyIn.addEventListener("drop", (e) => {
+    const files = [...(e.dataTransfer?.files || [])].filter((f) => f.type.startsWith("image/"));
+    if (files.length) { e.preventDefault(); addPhotos(files); }
+  });
+
+  // Puts the photo on its own line where the cursor is.
+  function insertAtCursor(text) {
+    const start = bodyIn.selectionStart ?? bodyIn.value.length, end = bodyIn.selectionEnd ?? start;
+    const before = bodyIn.value.slice(0, start), after = bodyIn.value.slice(end);
+    const pre = before && !before.endsWith("\n") ? "\n" : "", post = after.startsWith("\n") ? "" : "\n";
+    bodyIn.value = before + pre + text + post + after;
+    const pos = (before + pre + text + post).length;
+    bodyIn.setSelectionRange(pos, pos);
+  }
+  async function addPhotos(files) {
+    for (const f of files) {
+      uploading++; save.disabled = true; photoStatus.textContent = "Uploading photo…"; err.textContent = "";
+      try {
+        const src = await ctx.api.uploadImage("knowledge", await shrinkImage(f));
+        insertAtCursor(`![](${src})`);
+        if (previewing) paintPreview();
+      } catch (e) { err.textContent = `Couldn't add that photo: ${e.message}`; }
+      uploading--;
+      if (!uploading) { save.disabled = false; photoStatus.textContent = "Photo added. Type a caption between the [ ] if you like."; }
+    }
+  }
 
   function paintPreview() {
     previewBtn.textContent = previewing ? "Back to editing" : "Preview";
@@ -133,6 +173,7 @@ function editorView(el, ctx, id, getArticles) {
     const t = title.value.trim(), c = category.value.trim(), b = bodyIn.value.trim();
     if (!t) { err.textContent = "Give the article a title."; return; }
     if (!b) { err.textContent = "The article is empty."; return; }
+    if (uploading) { err.textContent = "Wait for the photo to finish uploading."; return; }
     save.disabled = true;
     try {
       const saved = await ctx.api.saveArticle(ctx.session(), id, { title: t, category: c, body: b });

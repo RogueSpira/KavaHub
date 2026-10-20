@@ -9,6 +9,7 @@
     "rules": "firebase deploy --only firestore:rules"
   },
   "dependencies": {
+    "@netlify/blobs": "^10.7.13",
     "firebase-admin": "^13.10.0"
   }
 }

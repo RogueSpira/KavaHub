@@ -13,8 +13,24 @@ const fail = (status, msg) => { throw new ApiError(status, msg); };
 const LOC_RE = /^[a-z][a-z0-9-]{1,30}$/;
 const ID_RE = /^[a-z][a-z0-9-]{1,30}$/;
 
-// deps: { db, auth: { verifyIdToken, createCustomToken }, now: () => timestamp value, env: { PIN_PEPPER, SETUP_CODE } }
-export function makeApi({ db, auth, now, env }) {
+// Pictures (e.g. Knowledge Bank photos) live in Netlify Blobs, not Firebase.
+export const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+export const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+export const MEDIA_ID_RE = /^[a-z][a-z0-9-]{1,30}\.[a-z0-9]{12,40}$/; // "<location>.<random>"
+// Tools that may upload pictures, and the access level needed.
+const MEDIA_TOOLS = { knowledge: 2, tv: 1 };
+
+// Look up a stored picture for display. Public: ids are long and random, and pictures never change.
+export async function readMedia(media, id) {
+  if (!media || !MEDIA_ID_RE.test(String(id || ""))) return null;
+  const hit = await media.getWithMetadata(id, { type: "arrayBuffer" });
+  if (!hit || !hit.data) return null;
+  return { data: hit.data, type: IMAGE_TYPES.includes(hit.metadata?.type) ? hit.metadata.type : "application/octet-stream" };
+}
+
+// deps: { db, auth: { verifyIdToken, createCustomToken }, now: () => timestamp value,
+//         env: { PIN_PEPPER, SETUP_CODE }, media: { set(key, bytes, { metadata }), getWithMetadata(key, { type }) } }
+export function makeApi({ db, auth, now, env, media }) {
   /* ---------------- helpers ---------------- */
   const locRef = (loc) => db.doc(`locations/${loc}`);
   const userRef = (loc, uid) => db.doc(`locations/${loc}/users/${uid}`);
@@ -76,8 +92,8 @@ export function makeApi({ db, auth, now, env }) {
     const me = { uid: decoded.uid, ...snap.data() };
     const role = (await roleRef(loc, me.roleId).get()).data() || {};
     const isOwner = me.roleId === "owner";
-    const adminLevel = isOwner ? 2 : (me.overrides?.admin ?? role.perms?.admin ?? 0);
-    return { loc, me, isOwner, rank: isOwner ? 1000 : (role.rank ?? 0), adminLevel };
+    const levelOf = (tool) => (isOwner ? 2 : (me.overrides?.[tool] ?? role.perms?.[tool] ?? 0));
+    return { loc, me, isOwner, rank: isOwner ? 1000 : (role.rank ?? 0), adminLevel: levelOf("admin"), levelOf };
   }
   async function requireAdmin(idToken) {
     const c = await caller(idToken);
@@ -246,6 +262,27 @@ export function makeApi({ db, auth, now, env }) {
       return { pin };
     },
 
+    // Upload a picture: { tool, data: "data:image/jpeg;base64,…" }. The device shrinks it first.
+    // Returns { src } — the address to put in the article.
+    async mediaUpload(data, idToken) {
+      const c = await caller(idToken);
+      const tool = String(data.tool || "");
+      const need = MEDIA_TOOLS[tool];
+      if (!need) fail(400, "Pictures can't be added there.");
+      if (c.levelOf(tool) < need) fail(403, "You don't have access to add pictures here.");
+      if (!media) fail(500, "Picture storage isn't available.");
+      const m = /^data:(image\/(?:jpeg|png|webp|gif));base64,([A-Za-z0-9+/=]+)$/.exec(String(data.data || ""));
+      if (!m) fail(400, "Send a JPEG, PNG, WebP or GIF picture.");
+      const bytes = Buffer.from(m[2], "base64");
+      if (!bytes.length) fail(400, "That picture is empty.");
+      if (bytes.length > MAX_IMAGE_BYTES) fail(413, "That picture is too big (4 MB max).");
+      const id = `${c.loc}.${randomBytes(12).toString("hex")}`;
+      await media.set(id, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.length), {
+        metadata: { type: m[1], tool, by: c.me.uid, at: Date.now() },
+      });
+      return { src: `/.netlify/functions/hub?media=${id}`, bytes: bytes.length };
+    },
+
     async adminCreateRole(data, idToken) {
       const c = await requireAdmin(idToken);
       if (!c.isOwner) fail(403, "Only an Owner can change roles.");
@@ -279,10 +316,11 @@ export function makeApi({ db, auth, now, env }) {
   };
 
   // Entry point used by the Netlify Function.
-  return async function handle(action, data, idToken) {
+  async function handle(action, data, idToken) {
     const fn = Object.prototype.hasOwnProperty.call(actions, action) ? actions[action] : null;
     if (!fn) fail(404, "Unknown action.");
     if (!env.PIN_PEPPER) fail(500, "Server is missing PIN_PEPPER.");
     return fn(data || {}, idToken);
-  };
+  }
+  return handle;
 }

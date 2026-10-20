@@ -4,10 +4,12 @@
 //   # Heading  /  ## Smaller heading
 //   - bullet          1. numbered step
 //   **bold**   *italic*   [link text](https://…)   bare https://… links
+//   ![caption](picture address)   on its own line = a photo (added with the Add photo button)
 //   blank line = new paragraph
 import { h } from "../../js/ui.js";
 
 export const FORMAT_HELP = [
+  ["📷 Add photo", "a picture (or paste / drag one into the article)"],
   ["## Heading", "a section heading"],
   ["- item", "a bullet point"],
   ["1. step", "a numbered step"],
@@ -34,6 +36,9 @@ function inline(text) {
 }
 const link = (href, label) => h("a", { href, target: "_blank", rel: "noopener noreferrer" }, label);
 
+// Pictures we'll show: ones uploaded to the hub, https links, and (demo only) in-page pictures.
+const okImage = (src) => /^\/\.netlify\/functions\/hub\?media=[a-z0-9.-]+$/.test(src) || /^https:\/\//.test(src) || /^data:image\/(jpeg|png|webp|gif);base64,/.test(src);
+
 export function render(body) {
   const root = h("div", { class: "kb-body" });
   const lines = String(body || "").replace(/\r/g, "").split("\n");
@@ -44,7 +49,13 @@ export function render(body) {
     const line = raw.trimEnd();
     let m;
     if (!line.trim()) { flushPara(); flushList(); continue; }
-    if ((m = line.match(/^(#{1,3})\s+(.*)$/))) {
+    if ((m = line.match(/^\s*!\[([^\]]*)\]\(([^)\s]+)\)\s*$/)) && okImage(m[2])) {
+      flushPara(); flushList();
+      const img = h("img", { src: m[2], alt: m[1] || "Photo", loading: "lazy" });
+      root.append(h("figure", { class: "kb-photo" },
+        m[2].startsWith("data:") ? img : h("a", { href: m[2], target: "_blank", rel: "noopener noreferrer" }, img),
+        m[1] ? h("figcaption", {}, m[1]) : null));
+    } else if ((m = line.match(/^(#{1,3})\s+(.*)$/))) {
       flushPara(); flushList();
       root.append(h(m[1].length === 1 ? "h2" : "h3", {}, inline(m[2])));
     } else if ((m = line.match(/^\s*[-*•]\s+(.*)$/))) {
@@ -67,6 +78,7 @@ export function render(body) {
 // Plain-text snippet for the article list.
 export function snippet(body, n = 140) {
   const t = String(body || "")
+    .replace(/^\s*!\[[^\]]*\]\([^)]*\)\s*$/gm, "")
     .replace(/^#{1,3}\s+/gm, "").replace(/^\s*([-*•]|\d+[.)])\s+/gm, "")
     .replace(/\*\*([^*]+)\*\*/g, "$1").replace(/\*([^*]+)\*/g, "$1")
     .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/\s+/g, " ").trim();

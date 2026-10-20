@@ -1,13 +1,17 @@
 // Netlify Function: POST /.netlify/functions/hub  { action, loc, ...data }
 // Signed-in calls send "Authorization: Bearer <Firebase ID token>".
-// GET returns a health check (no secrets — just whether each setting is present).
+// GET ?media=<id> serves a stored picture (Netlify Blobs store "hub-media").
+// Any other GET returns a health check (no secrets — just whether each setting is present).
 //
 // Environment variables (Netlify → Site configuration → Environment variables):
 //   FIREBASE_SERVICE_ACCOUNT  the entire service-account key file, pasted as-is
 //   PIN_PEPPER                long random string; never change it once people have PINs
 //   SETUP_CODE                phrase typed once on the first-time setup screen
-import { makeApi, ApiError } from "../lib/handlers.js";
+import { getStore } from "@netlify/blobs";
+import { makeApi, ApiError, readMedia, MEDIA_ID_RE } from "../lib/handlers.js";
 import { readServiceAccount } from "../lib/credentials.js";
+
+const mediaStore = () => getStore({ name: "hub-media", consistency: "strong" });
 
 let handle; // reused across warm invocations
 async function init() {
@@ -36,6 +40,11 @@ async function init() {
     auth: { verifyIdToken: (t) => auth.verifyIdToken(t), createCustomToken: (u, c) => auth.createCustomToken(u, c) },
     now: () => new Date(),
     env: { PIN_PEPPER: process.env.PIN_PEPPER, SETUP_CODE: process.env.SETUP_CODE },
+    // Connect to Blobs only when a picture is used, so a storage problem can't affect sign-in.
+    media: {
+      set: (...a) => mediaStore().set(...a),
+      getWithMetadata: (...a) => mediaStore().getWithMetadata(...a),
+    },
   });
   return handle;
 }
@@ -61,7 +70,18 @@ async function health() {
 
 export default async (req) => {
   try {
-    if (req.method === "GET") return json(200, await health());
+    if (req.method === "GET") {
+      const id = new URL(req.url).searchParams.get("media");
+      if (id !== null) {
+        if (!MEDIA_ID_RE.test(id)) return new Response("Not found", { status: 404 });
+        const pic = await readMedia(mediaStore(), id);
+        if (!pic) return new Response("Not found", { status: 404 });
+        return new Response(pic.data, { status: 200, headers: {
+          "Content-Type": pic.type, "Cache-Control": "public, max-age=31536000, immutable", "X-Content-Type-Options": "nosniff",
+        } });
+      }
+      return json(200, await health());
+    }
     if (req.method !== "POST") return json(405, { error: "Use POST." });
     let body;
     try { body = await req.json(); } catch { return json(400, { error: "Bad request." }); }

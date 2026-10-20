@@ -60,3 +60,13 @@ export const fakeAuth = {
   async createCustomToken(uid, claims) { return JSON.stringify({ uid, ...claims }); },
   async verifyIdToken(t) { try { return JSON.parse(t); } catch { throw new Error("bad token"); } },
 };
+
+// Fake Netlify Blobs store.
+export function fakeBlobs() {
+  const m = new Map();
+  return {
+    _m: m,
+    async set(key, data, opts = {}) { m.set(key, { data, metadata: opts.metadata || {} }); },
+    async getWithMetadata(key) { return m.get(key) || null; },
+  };
+}

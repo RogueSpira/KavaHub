@@ -1,12 +1,11 @@
-// Tile definition for "TV Screens". Not built yet: shows a "Coming soon" screen.
-// When this tool is built, add an index.js here, point load() at it and set status to "live".
+// Tile definition for "TV Screens" — controls the TV board at /board/.
 export default {
   id: "tv",
   name: "TV Screens",
   icon: "📺",
-  blurb: "Slides, events, specials, ticker and today's kavatenders on the TVs",
+  blurb: "Who's working, events, specials, ticker and what each TV shows",
   accent: "aqua",
-  status: "soon",
-  levels: { use: "View and fix today's crew on the TVs", manage: "Edit all TV content, screens and themes" },
-  load: () => import("../_shared/soon.js"),
+  status: "live",
+  levels: { use: "Set today's opener and closer, plus any parts given in TV Screens → Permissions", manage: "Change everything: events, slides, screens and permissions" },
+  load: () => import("./index.js"),
 };

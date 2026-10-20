@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kava & Co. Mandarin TV</title>
+<meta name="theme-color" content="#0e2c18">
+<link rel="icon" href="../icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Shrikhand&family=Fredoka:wght@500;600;700&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="board.css">
+<!-- Keep the Firebase version in sync with FIREBASE_SDK_VERSION in ../js/config.js -->
+<link rel="modulepreload" href="board.js">
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js" crossorigin>
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js" crossorigin>
+<!-- QR codes are drawn right here on the TV (qrcode-generator by Kazuhiko Arase, MIT) -->
+<script src="qrcode.js" defer></script>
+</head>
+<body data-theme="green">
+<div id="wash"></div>
+<header id="top">
+  <img id="logo" src="assets/mandarin-logo.png" alt="Kava & Co. Mandarin">
+  <div class="top-right">
+    <div class="pill" id="hhpill" hidden></div>
+    <div class="pill" id="wx" hidden><span id="wxIcon"></span><span id="wxTemp"></span><span class="muted" id="wxCond"></span></div>
+    <div class="pill"><span class="muted" id="day"></span><span id="clock"></span></div>
+  </div>
+</header>
+<main id="stage"></main>
+<footer id="ticker" hidden><div class="tag">Kava News</div><div class="track" id="track"></div></footer>
+<img id="manny" src="assets/manny.png" alt="">
+<div id="empty" hidden></div>
+<div id="hint"></div>
+<script type="module" src="board.js"></script>
+</body>
+</html>

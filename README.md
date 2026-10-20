@@ -145,6 +145,21 @@ loaded and which settings are present (no secret values are shown).
 - **App and server changes:** push to GitHub and Netlify redeploys automatically.
 - **`firestore.rules` changes:** paste into Firebase console → Firestore → Rules → Publish.
 
+## The TV board
+
+The TVs open `https://kavahub.netlify.app/board/?tv=1` (or `?tv=2`, …). No PIN on the TVs — the board only reads.
+Everything it shows is set in the hub under **TV Screens**:
+
+- **Today** — tap who's opening and closing. Goes back to the weekly schedule at 5 AM.
+- **Events** — one-time, weekly, or monthly (1st–4th / last weekday), with flyers.
+- **Slides** — Who's Working roster and weekly schedule, happy hour, specials, signature drinks, botanicals, community photos, ticker, welcome, QR links.
+- **Screens** (Manage) — which slides each TV shows, the order, seconds per slide, Jungle or Night colors.
+- **Permissions** (Manage) — which roles may change each part.
+- **Import** (Manage) — one-time copy from the old Google Sheets.
+
+`/board/?demo` shows sample content. On a TV remote: → next slide, ← back, OK pauses.
+The board reloads itself at 5:10 AM each day to pick up updates.
+
 ## Tests
 `npm install && npm test` runs the server logic (setup, PIN sign-in, adding and changing
 people, role ranks, last-Owner protection, PIN uniqueness, Show PIN) against an in-memory

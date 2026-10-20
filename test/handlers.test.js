@@ -1,14 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { makeApi } from "../netlify/lib/handlers.js";
-import { fakeFirestore, fakeAuth } from "./fake-firestore.js";
+import { makeApi, readMedia } from "../netlify/lib/handlers.js";
+import { fakeFirestore, fakeAuth, fakeBlobs } from "./fake-firestore.js";
 
 function setup() {
   const db = fakeFirestore();
-  const call = makeApi({ db, auth: fakeAuth, now: () => new Date(), env: { PIN_PEPPER: "test-pepper", SETUP_CODE: "kava" } });
+  const media = fakeBlobs();
+  const call = makeApi({ db, auth: fakeAuth, now: () => new Date(), env: { PIN_PEPPER: "test-pepper", SETUP_CODE: "kava" }, media });
   const loc = "mandarin";
   const api = (action, data = {}, token = null) => call(action, { loc, ...data }, token);
-  return { db, api, loc };
+  return { db, api, loc, media };
 }
 const rejects = (p, status, re) => assert.rejects(p, (e) => e.status === status && (!re || re.test(e.message)));
 
@@ -187,4 +188,29 @@ test("show PIN: admins see PINs (incl. after reset), rank rules apply, viewing i
 
   const log = await t.db.collection("locations/mandarin/activity").get();
   assert.equal(log.docs.filter((d) => d.get("action") === "Viewed PIN").length, 5);
+});
+
+
+test("pictures: Manage on the tool can upload; others can't; bad input refused; stored and readable", async () => {
+  const t = await bootstrapped();
+  const png = "data:image/png;base64," + Buffer.from("fake-png-bytes").toString("base64");
+  const { src } = await t.api("mediaUpload", { tool: "knowledge", data: png }, t.owner);
+  const id = src.split("media=")[1];
+  assert.match(id, /^mandarin\.[a-z0-9]{24}$/);
+  const pic = await readMedia(t.media, id);
+  assert.equal(pic.type, "image/png");
+  assert.equal(Buffer.from(pic.data).toString(), "fake-png-bytes");
+
+  await t.api("adminCreateUser", { name: "Daniel", roleId: "kavatender", pin: "1357" }, t.owner);
+  const dan = (await t.api("pinLogin", { pin: "1357" })).token;
+  await rejects(t.api("mediaUpload", { tool: "knowledge", data: png }, dan), 403);           // kavatender = Use only
+  await rejects(t.api("mediaUpload", { tool: "knowledge", data: png }), 401);                // not signed in
+  await rejects(t.api("mediaUpload", { tool: "admin", data: png }, t.owner), 400);           // not a picture tool
+  await rejects(t.api("mediaUpload", { tool: "knowledge", data: "data:text/html;base64,PGI+" }, t.owner), 400);
+  await rejects(t.api("mediaUpload", { tool: "knowledge", data: "hello" }, t.owner), 400);
+  const big = "data:image/jpeg;base64," + Buffer.alloc(4 * 1024 * 1024 + 10).toString("base64");
+  await rejects(t.api("mediaUpload", { tool: "knowledge", data: big }, t.owner), 413);
+
+  assert.equal(await readMedia(t.media, "../secret"), null);
+  assert.equal(await readMedia(t.media, "mandarin.doesnotexist0000"), null);
 });
