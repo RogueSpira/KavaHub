@@ -3,12 +3,6 @@
   functions = "netlify/functions"
   command = "echo 'No build step'"
 
-[build.environment]
-  # The Firebase web apiKey in hub/js/config.js is public by design (every browser that
-  # opens the hub receives it; the database is protected by firestore.rules). Tell
-  # Netlify's secret scanner to skip that one value. All other scanning stays on.
-  SECRETS_SCAN_SMART_DETECTION_OMIT_VALUES = "AIzaSyCe2FE8x2vscdUnPSUY1fCEsEHtwqfV5PE"
-
 [functions]
   node_bundler = "esbuild"
   external_node_modules = ["firebase-admin"]
