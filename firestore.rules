@@ -105,6 +105,60 @@ service cloud.firestore {
         allow delete: if can(loc, 'suggestions', 2)
           || (can(loc, 'suggestions', 1) && resource.data.authorUid == request.auth.uid && resource.data.status == 'new');
       }
+
+      // Opening & Closing checklists.
+      // The three lists (opening / shift / closing): everyone with Use reads them; Manage edits.
+      match /tools-data/checklists/lists/{listId} {
+        allow read: if can(loc, 'checklists', 1);
+        allow write: if can(loc, 'checklists', 2)
+          && listId in ['opening', 'shift', 'closing']
+          && request.resource.data.keys().hasOnly(['name', 'items'])
+          && request.resource.data.name is string && request.resource.data.name.size() <= 40
+          && request.resource.data.items is list && request.resource.data.items.size() <= 150;
+      }
+
+      // One document per business day per list ("2026-10-20_closing"), holding who checked what.
+      // - Manage can read every day (history). Use can read only the last ~2 days
+      //   (today + last night's close).
+      // - Each write changes exactly one item. A check must be in your own name and stamped
+      //   with the server's time; anyone can uncheck. Only today's lists can be changed.
+      match /tools-data/checklists/days/{dayId} {
+        function recentDay(d) { return d.dayStart > request.time - duration.value(60, 'h'); }
+        function validDay(d) {
+          return d.keys().hasOnly(['date', 'listId', 'listName', 'dayStart', 'items', 'checks', 'updatedAt'])
+            && d.listId in ['opening', 'shift', 'closing']
+            && dayId == d.date + '_' + d.listId
+            && d.dayStart is timestamp
+            && d.dayStart > request.time - duration.value(36, 'h')
+            && d.dayStart < request.time + duration.value(12, 'h')
+            && d.listName is string && d.listName.size() <= 40
+            && d.items is list && d.items.size() <= 150
+            && d.checks is map
+            && d.updatedAt == request.time;
+        }
+        function oneCheck(before) {
+          let after = request.resource.data.checks;
+          let changed = after.diff(before).affectedKeys();
+          let k = changed.toList()[0];
+          return changed.size() == 1
+            && (!(k in after)
+              || (after[k].byUid == request.auth.uid
+                && after[k].by == me(loc).name
+                && after[k].at == request.time
+                && after[k].text is string && after[k].text.size() <= 200));
+        }
+        allow read: if can(loc, 'checklists', 2)
+          || (can(loc, 'checklists', 1) && (resource == null || recentDay(resource.data)));
+        allow create: if can(loc, 'checklists', 1)
+          && validDay(request.resource.data)
+          && oneCheck({});
+        allow update: if can(loc, 'checklists', 1)
+          && validDay(request.resource.data)
+          && request.resource.data.dayStart == resource.data.dayStart
+          && request.resource.data.date == resource.data.date
+          && oneCheck(resource.data.checks);
+        allow delete: if false;
+      }
     }
 
     // pinIndex and anything not listed above: server only.

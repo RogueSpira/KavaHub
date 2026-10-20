@@ -274,3 +274,65 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .st-planned { background: rgba(154, 92, 255, .2); color: #C4A3FF; }
 .st-done { background: rgba(182, 242, 74, .16); color: var(--lime); }
 .st-declined { background: rgba(147, 169, 163, .16); color: var(--muted); }
+
+/* ---------- Opening & Closing checklists ---------- */
+.chip-ok { background: rgba(182, 242, 74, .16); color: var(--lime); }
+.ok-text { color: var(--lime); font-weight: 700; }
+.warn-text { color: var(--orange); font-weight: 700; }
+.cl-date { font-family: var(--f-label); font-size: 22px; margin: 4px 0 14px; }
+.cl-last { margin-bottom: 18px; }
+.cl-last.warn { border-color: color-mix(in srgb, var(--orange) 60%, transparent); }
+.cl-last summary { cursor: pointer; min-height: 32px; display: flex; align-items: center; }
+.cl-last .cl-list { margin-top: 12px; }
+.cl-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
+.cl-tab {
+  min-height: 72px; border-radius: var(--r); border: 2px solid var(--line); background: var(--panel);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 8px;
+}
+.cl-tab-name { font-family: var(--f-label); font-weight: 700; font-size: 17px; text-align: center; }
+.cl-tab-count { font-size: 14px; color: var(--muted); }
+.cl-tab.on { border-color: var(--lime); background: color-mix(in srgb, var(--lime) 14%, var(--panel)); }
+.cl-tab.complete .cl-tab-count { color: var(--lime); font-weight: 700; }
+.cl-progress { height: 10px; border-radius: 999px; background: rgba(255, 243, 224, .1); overflow: hidden; margin-bottom: 14px; }
+.cl-progress-bar { height: 100%; background: linear-gradient(90deg, var(--lime), var(--green)); border-radius: 999px; transition: width .3s ease; }
+.cl-complete { text-align: center; font-family: var(--f-label); font-weight: 700; font-size: 19px; color: var(--lime); margin-bottom: 12px; }
+.cl-list { display: grid; gap: 8px; }
+.cl-row {
+  display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; min-height: 62px; padding: 10px 16px;
+  border-radius: var(--r-sm); border: 1.5px solid var(--line); background: rgba(18, 48, 53, .72);
+}
+button.cl-row:active { transform: scale(.99); }
+.cl-box {
+  width: 34px; height: 34px; border-radius: 10px; border: 2.5px solid var(--cream-dim); flex-shrink: 0;
+  display: grid; place-items: center; font-weight: 700; font-size: 20px; color: var(--ink);
+}
+.cl-text { flex: 1; min-width: 0; font-size: 17.5px; overflow-wrap: anywhere; }
+.cl-who { font-size: 14px; color: var(--muted); text-align: right; white-space: nowrap; }
+.cl-row.checked { border-color: color-mix(in srgb, var(--lime) 35%, transparent); background: rgba(182, 242, 74, .06); }
+.cl-row.checked .cl-box { background: var(--lime); border-color: var(--lime); }
+.cl-row.checked .cl-text { color: var(--cream-dim); text-decoration: line-through; text-decoration-color: rgba(255, 243, 224, .35); }
+.cl-row.skipped { border-color: color-mix(in srgb, var(--orange) 45%, transparent); }
+.cl-row.skipped .cl-box { border-color: var(--orange); color: var(--orange); }
+.cl-row.skipped .cl-who { color: var(--orange); font-weight: 700; }
+.readonly .cl-row { min-height: 50px; }
+.empty-card { text-align: center; display: grid; gap: 12px; justify-items: center; padding: 28px; }
+.cl-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.cl-chips .chip { margin: 0; }
+.cl-detail { display: grid; gap: 14px; }
+.cl-day-card h3 { font-family: var(--f-label); font-size: 19px; display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.cl-editor { display: grid; gap: 18px; }
+.cl-edit-rows { display: grid; gap: 8px; }
+.cl-edit-row { display: flex; align-items: center; gap: 8px; }
+.cl-edit-num { width: 26px; text-align: right; color: var(--muted); font-size: 14px; flex-shrink: 0; }
+.cl-edit-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.cl-edit-actions .spacer { flex: 1; }
+@media (max-width: 560px) {
+  .cl-tab-name { font-size: 14.5px; }
+  .cl-row { flex-wrap: wrap; }
+  .cl-who { width: 100%; text-align: left; padding-left: 48px; margin-top: -6px; }
+  .cl-edit-row .icon-btn { width: 34px; height: 34px; }
+}
+.cl-last-sum { display: grid; gap: 6px; }
+.cl-skipped-names { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-left: 6px; vertical-align: middle; }
+.cl-skipped-names .chip { margin: 0; text-transform: none; letter-spacing: 0; font-size: 13px; }
+.cl-last[open] .cl-last-hint { display: none; }

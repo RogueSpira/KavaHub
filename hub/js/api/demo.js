@@ -210,3 +210,51 @@ export async function deleteSuggestion(sid) {
   if (i >= 0) sugg.splice(i, 1);
   changed();
 }
+
+/* ---------- Opening & Closing checklists ---------- */
+const clTemplates = fresh ? {} : {
+  opening: { name: "Opening", items: ["Turn on lights, music and TVs", "Count the drawer", "Make the first kava batch", "Check fridge temps", "Wipe down the bar and tables", "Unlock the door and flip the sign"].map((text, i) => ({ id: `o${i}`, text })) },
+  shift: { name: "Shift Change", items: ["Count the drawer", "Restock cups and lids", "Check kava levels — make a batch if under half", "Hand off notes to next kavatender"].map((text, i) => ({ id: `s${i}`, text })) },
+  closing: { name: "Closing", items: ["Last call announced", "Clean and sanitize the shells and pitchers", "Wipe down the bar", "Restock the fridge", "Take out trash and recycling", "Sweep and mop", "Count the drawer and drop", "Lights off, lock up"].map((text, i) => ({ id: `c${i}`, text })) },
+};
+const clDays = {}; // `${date}_${listId}` -> run
+{
+  const { businessKey, prevKey, dayStartOf } = await import("../../tools/checklists/days.js");
+  if (!fresh) {
+    const y = prevKey(businessKey()), t = businessKey();
+    const at = (key, h, m) => { const d = dayStartOf(key); d.setHours(h, m); return d; };
+    const run = (date, listId, who, doneIdx, hour) => {
+      const tpl = clTemplates[listId];
+      const checks = {};
+      doneIdx.forEach((i, n) => { const it = tpl.items[i]; checks[it.id] = { text: it.text, by: who, byUid: null, at: at(date, hour, 5 + n * 4) }; });
+      clDays[`${date}_${listId}`] = { date, listId, listName: tpl.name, dayStart: dayStartOf(date), items: structuredClone(tpl.items), checks };
+    };
+    run(y, "opening", "Josh", [0, 1, 2, 3, 4, 5], 9);
+    run(y, "shift", "Daniel", [0, 1, 2, 3], 15);
+    run(y, "closing", "Wheatyn", [0, 1, 2, 4, 6, 7], 22);
+    run(t, "opening", "Daniel", [0, 1, 2], 9);
+  }
+}
+export function watchChecklistTemplates(cb) { return watch(() => cb(structuredClone(clTemplates))); }
+export async function saveChecklistTemplate(listId, { name, items }) {
+  await wait(150);
+  clTemplates[listId] = { name, items: items.map(({ id, text }) => ({ id, text })) };
+  changed();
+}
+export function watchChecklistDay(dateKey, cb) {
+  return watch(() => cb(structuredClone({
+    opening: clDays[`${dateKey}_opening`] || null, shift: clDays[`${dateKey}_shift`] || null, closing: clDays[`${dateKey}_closing`] || null,
+  })));
+}
+export async function setChecklistItem(session, { dateKey, dayStart, listId, listName, items }, item, checked) {
+  await wait(80);
+  const k = `${dateKey}_${listId}`;
+  const r = clDays[k] || (clDays[k] = { date: dateKey, listId, listName, dayStart, items: [], checks: {} });
+  r.items = structuredClone(items); r.listName = listName;
+  if (checked) r.checks[item.id] = { text: item.text, by: session.me.name, byUid: session.uid, at: now() };
+  else delete r.checks[item.id];
+  changed();
+}
+export function watchChecklistHistory(since, cb) {
+  return watch(() => cb(structuredClone(Object.values(clDays).filter((r) => r.dayStart >= since).sort((a, b) => b.dayStart - a.dayStart))));
+}

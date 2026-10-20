@@ -1,12 +1,10 @@
-// Tile definition for "Opening & Closing". Not built yet: shows a "Coming soon" screen.
-// When this tool is built, add an index.js here, point load() at it and set status to "live".
 export default {
   id: "checklists",
   name: "Opening & Closing",
   icon: "✅",
-  blurb: "Run the opening and closing checklists",
+  blurb: "Opening, Shift Change and Closing checklists",
   accent: "lime",
-  status: "soon",
-  levels: { use: "Fill out checklists", manage: "Edit checklist templates and review past runs" },
-  load: () => import("../_shared/soon.js"),
+  status: "live",
+  levels: { use: "Check off today's lists, see last night's close", manage: "Edit the lists and see the full history" },
+  load: () => import("./index.js"),
 };

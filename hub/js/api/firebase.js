@@ -118,3 +118,47 @@ export const respondSuggestion = (session, id, { status, response }) => F.update
   status, response, respondedBy: session.me.name, respondedAt: F.serverTimestamp(),
 });
 export const deleteSuggestion = (id) => F.deleteDoc(F.doc(suggCol(), id));
+
+/* ---------- Opening & Closing checklists ---------- */
+const CL = "tools-data/checklists";
+const CL_LISTS = ["opening", "shift", "closing"];
+const tsToDate = (v) => v?.toDate?.() || v || null;
+function dayDoc(d) {
+  if (!d.exists()) return null;
+  const x = d.data();
+  const checks = {};
+  for (const [k, c] of Object.entries(x.checks || {})) checks[k] = { ...c, at: tsToDate(c.at) };
+  return { ...x, checks, dayStart: tsToDate(x.dayStart) };
+}
+export function watchChecklistTemplates(cb) {
+  return F.onSnapshot(col(`${CL}/lists`),
+    (q) => cb(Object.fromEntries(q.docs.map((d) => [d.id, d.data()]))),
+    (e) => { console.warn("[hub] checklist lists", e); cb(null, e); });
+}
+export const saveChecklistTemplate = (listId, { name, items }) =>
+  F.setDoc(docRef(`${CL}/lists/${listId}`), { name, items: items.map(({ id, text }) => ({ id, text })) });
+
+// Live view of one business day: { opening, shift, closing } (each null until something is checked).
+export function watchChecklistDay(dateKey, cb) {
+  const out = {}; const seen = new Set();
+  const unsubs = CL_LISTS.map((id) => F.onSnapshot(docRef(`${CL}/days/${dateKey}_${id}`),
+    (d) => { out[id] = dayDoc(d); seen.add(id); if (seen.size === CL_LISTS.length) cb({ ...out }); },
+    (e) => { console.warn("[hub] checklist day", e); cb(null, e); }));
+  return () => unsubs.forEach((u) => u());
+}
+export function setChecklistItem(session, { dateKey, dayStart, listId, listName, items }, item, checked) {
+  return F.setDoc(docRef(`${CL}/days/${dateKey}_${listId}`), {
+    date: dateKey, listId, listName, dayStart,
+    items: items.map(({ id, text }) => ({ id, text })),
+    checks: { [item.id]: checked
+      ? { text: item.text, by: session.me.name, byUid: session.uid, at: F.serverTimestamp() }
+      : F.deleteField() },
+    updatedAt: F.serverTimestamp(),
+  }, { merge: true });
+}
+// Managers: every saved list run since a date, newest first.
+export function watchChecklistHistory(since, cb) {
+  return F.onSnapshot(F.query(col(`${CL}/days`), F.where("dayStart", ">=", since), F.orderBy("dayStart", "desc"), F.limit(400)),
+    (q) => cb(q.docs.map(dayDoc)),
+    (e) => { console.warn("[hub] checklist history", e); cb(null, e); });
+}
