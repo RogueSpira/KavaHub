@@ -299,7 +299,7 @@ function contentList(pane, ctx, store) {
       specials: () => `${withDefaults("specials", tv.specials).items.length} specials`,
       signature: () => `${withDefaults("signature", tv.signature).items.length} drinks`,
       products: () => `${withDefaults("products", tv.products).items.length} botanicals`,
-      community: () => `${withDefaults("community", tv.community).photos.length} photos`,
+      community: () => { const c = withDefaults("community", tv.community); return [c.driveFolder ? "Google Drive folder" : "", c.photos.length ? `${c.photos.length} added here` : ""].filter(Boolean).join(" + ") || "No photos"; },
       ticker: () => `${withDefaults("ticker", tv.ticker).items.length} messages`,
       welcome: () => withDefaults("welcome", tv.welcome).headline || "",
       qr: () => (withDefaults("qr", tv.qr).url || "").replace(/^https?:\/\//, ""),
@@ -389,11 +389,13 @@ const SPECS = {
     note: "One shows each time the slide comes around." },
   ticker: { list: { key: "items", noun: "message", max: 30, strings: true, item: [["text", "Message", "text"]] },
     note: "Wrap words in **double stars** to make them gold." },
-  community: { fields: [["title", "Title", "text"], ["footer", "Line at the bottom", "text", "e.g. Send your photos to **Christian@kavaandcompany.com**"]], photos: true },
+  community: { fields: [["title", "Title", "text"], ["footer", "Line at the bottom", "text", "e.g. Send your photos to **Christian@kavaandcompany.com**"],
+    ["driveFolder", "Google Drive folder (link or ID)", "text", "Photos in this folder show up on the TVs on their own (checked every 30 minutes). The folder must be shared with anyone who has the link."]],
+    photos: true, note: "Photos come from the Google Drive folder, plus any you add below." },
   qr: { fields: [["title", "Events QR title", "text"], ["text", "Events QR text", "textarea"], ["url", "Events QR link", "url"],
     ["voteSite", "Live vote site", "url", "Used by the Live Vote Results slide"], ["feudSurvey", "Feud survey link", "url", "Used by the Feud Survey QR slide"]] },
 };
-const BLANK = { welcome: { eyebrow: "", headline: "", sub: "" }, happyhour: { title: "", sub: "", slots: [] }, community: { title: "", footer: "", photos: [] }, qr: {} };
+const BLANK = { welcome: { eyebrow: "", headline: "", sub: "" }, happyhour: { title: "", sub: "", slots: [] }, community: { title: "", footer: "", driveFolder: "", photos: [] }, qr: {} };
 
 function sectionEditor(pane, ctx, store, id) {
   const sec = sectionById(id), spec = SPECS[id];
@@ -467,6 +469,11 @@ function sectionEditor(pane, ctx, store, id) {
         items = items.sort((a, b) => a.start.localeCompare(b.start));
       }
       out[L.key] = L.strings ? items.map((it) => it.text) : items;
+    }
+    if (id === "community" && out.driveFolder) {
+      const m = /\/folders\/([A-Za-z0-9_-]{10,})/.exec(out.driveFolder) || /[?&]id=([A-Za-z0-9_-]{10,})/.exec(out.driveFolder) || /^([A-Za-z0-9_-]{10,})$/.exec(out.driveFolder);
+      if (!m) { ctx.toast("That doesn't look like a Google Drive folder link.", "err"); return; }
+      out.driveFolder = m[1];
     }
     if (id === "qr") for (const k of ["url", "voteSite", "feudSurvey"]) if (out[k] && !/^https:\/\//.test(out[k])) { ctx.toast("Links need to start with https://", "err"); return; }
     save.disabled = true;
@@ -589,13 +596,13 @@ function importView(pane, ctx, store) {
   const go = h("button", { class: "btn primary", type: "button", onclick: read }, "Read the Google Sheets");
   add(clear(pane), h("div", { class: "card tv-import" },
     h("h3", {}, "Move from Google Sheets"),
-    h("p", { class: "muted" }, "Reads the old TV sheets (schedule, events, staff photos, specials, signature drinks, botanicals, ticker, screens and the community photo folder) and shows what it found before anything changes."),
+    h("p", { class: "muted" }, "Reads the old TV sheets (schedule, events, staff photos, specials, signature drinks, botanicals, ticker and screens) and shows what it found before anything changes. Pictures stored in Google Drive are copied into the hub, so only Community Photos keep coming from the Drive folder."),
     go, status));
 
   async function read() {
     go.disabled = true; add(clear(status), h("p", { class: "loading" }, "Reading the sheets…"));
     try {
-      const { fetchSheets, convert } = await import("./import.js");
+      const { fetchSheets, convert, copyDrivePictures } = await import("./import.js");
       const { rows, failed } = await fetchSheets();
       const { sections, notes } = convert(rows);
       const names = { crew: "Who's Working", events: "Events", specials: "Drink Specials", signature: "Signature Drinks", products: "Know Your Botanicals", ticker: "Ticker", community: "Community Photos", screens: "Screens" };
@@ -610,8 +617,12 @@ function importView(pane, ctx, store) {
           h("input", { type: "checkbox", checked: true, onchange: (e) => (e.target.checked ? picked.add(k) : picked.delete(k)) }), h("span", {}, names[k] || k)))),
         h("p", { class: "muted small" }, "This replaces what's in those parts now. Today's crew changes are kept."),
         h("button", { class: "btn primary", type: "button", onclick: async (e) => {
-          e.target.disabled = true;
+          const btn = e.target; btn.disabled = true;
           try {
+            const chosen = Object.fromEntries([...picked].map((k) => [k, sections[k]]));
+            const { failed: lost } = await copyDrivePictures(chosen, (url) => ctx.api.copyImage("tv", url),
+              (n, total) => { btn.textContent = `Copying pictures ${n} of ${total}…`; });
+            btn.textContent = "Saving…";
             const tv = store.tv;
             for (const k of picked) {
               if (k === "screens") await ctx.api.saveTv("config", { perms: DEFAULT_PERMS, ...(tv.config || {}), screens: sections.screens });
@@ -619,9 +630,14 @@ function importView(pane, ctx, store) {
               else await ctx.api.saveTv(k, { ...(tv[k] || {}), ...sections[k] });
             }
             ctx.log("Imported from Google Sheets", [...picked].map((k) => names[k] || k).join(", "));
+            if (lost.length) {
+              btn.textContent = "Imported";
+              add(status, h("p", { class: "modal-err" }, `Imported, but these pictures couldn't be copied from Google Drive (add them again by hand): ${lost.join(", ")}.`));
+              return;
+            }
             ctx.toast("Imported — check the Events and Slides tabs");
             ctx.navigate(ctx.base);
-          } catch (err) { fail(ctx, err); e.target.disabled = false; }
+          } catch (err) { fail(ctx, err); btn.disabled = false; btn.textContent = "Import"; }
         } }, "Import"));
     } catch (e) { add(clear(status), h("p", { class: "modal-err" }, e.message || "Couldn't read the sheets.")); }
     go.disabled = false;

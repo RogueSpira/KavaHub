@@ -299,6 +299,7 @@ export async function deleteArticle(aid) { await wait(100); const i = kb.findInd
 /* ---------- pictures ---------- */
 // Demo: nothing is uploaded; the picture stays in the page as-is.
 export async function uploadImage(_tool, dataUrl) { await wait(300); return dataUrl; }
+export async function copyImage(_tool, url) { await wait(150); return url; }
 
 /* ---------- TV Screens ---------- */
 const tv = {};

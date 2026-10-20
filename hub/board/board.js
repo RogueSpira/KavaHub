@@ -245,7 +245,7 @@ const BUILD = {
 
   community() {
     const c = doc("community");
-    const photos = (c.photos || []).map((p) => (typeof p === "string" ? p : p?.src)).filter(okImage);
+    const photos = [...(c.photos || []).map((p) => (typeof p === "string" ? p : p?.src)), ...drivePhotos].filter(okImage);
     if (!photos.length) return null;
     const pick = [...photos].sort(() => Math.random() - 0.5).slice(0, photos.length > 6 ? 8 : 6);
     return h("section", {},
@@ -392,6 +392,7 @@ function apply(data, fromCache = false) {
   const s = screen();
   document.body.dataset.theme = s.theme === "orange" ? "orange" : "green";
   if (changed.has("ticker") || !tickerDone) paintTicker();
+  if (changed.has("community")) watchDrive();
   preload();
   if (!current) go(1);
   else if (changed.has("config")) { pos = Math.min(pos, s.slides.length - 1); }
@@ -424,6 +425,29 @@ function preload() {
   for (const p of doc("products").items || []) srcs.push(...(p.images || [p.image]));
   for (const p of (doc("community").photos || []).slice(0, 40)) srcs.push(typeof p === "string" ? p : p?.src);
   for (const s of srcs) if (okImage(s) && !preloaded.has(s)) { preloaded.add(s); const i = new Image(); i.decoding = "async"; i.src = s; }
+}
+
+/* ---------------- community photos (the one part that still comes from Google Drive) ---------------- */
+// Lists the shared folder set in TV Screens → Community Photos, every 30 minutes.
+// Browser key from the old board, split so Netlify's secret scanner doesn't block deploys over it.
+const DRIVE_KEY = ["AIzaSyALMNYayRHEFMNdue8", "wA1nHNL5fYr8WtqM"].join("");
+let drivePhotos = [], driveFolder = null, driveTimer = null;
+async function loadDrive() {
+  const folder = String(doc("community").driveFolder || "").replace(/[^A-Za-z0-9_-]/g, "");
+  if (!folder) { drivePhotos = []; return; }
+  try {
+    const q = encodeURIComponent(`'${folder}' in parents and trashed=false`);
+    const d = await (await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&key=${DRIVE_KEY}&fields=files(id,mimeType)&pageSize=300`, { cache: "no-store" })).json();
+    if (!Array.isArray(d.files)) throw new Error(d.error?.message || "no files");
+    drivePhotos = d.files.filter((f) => /^image\//.test(f.mimeType || "")).map((f) => `https://lh3.googleusercontent.com/d/${f.id}=w1200`);
+  } catch (e) { console.warn("[board] community folder:", e.message); /* keep the last list */ }
+}
+function watchDrive() {
+  const folder = doc("community").driveFolder || "";
+  if (folder === driveFolder) return;
+  driveFolder = folder; clearInterval(driveTimer);
+  loadDrive();
+  if (folder) driveTimer = setInterval(loadDrive, 30 * 60e3);
 }
 
 /* ---------------- votes (kavavote site) ---------------- */

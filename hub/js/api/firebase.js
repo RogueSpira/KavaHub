@@ -205,6 +205,8 @@ export const deleteArticle = (id) => F.deleteDoc(F.doc(kbCol(), id));
 /* ---------- pictures (stored in Netlify Blobs by the hub's server function) ---------- */
 // dataUrl comes from shrinkImage(). Returns the address to use in the article.
 export const uploadImage = async (tool, dataUrl) => (await call("mediaUpload", { tool, data: dataUrl })).src;
+// Copies a Google Drive picture into the hub's storage (used by the TV import). Returns the new address.
+export const copyImage = async (tool, url) => (await call("mediaCopy", { tool, url })).src;
 
 /* ---------- TV Screens (locations/{loc}/tv/{docId}) ---------- */
 // Everything the TVs show, as { docId: data }.

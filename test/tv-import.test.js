@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { convert, parseCSV, parseDate, patternFrom, fromHtml, imageFrom, slideFrom } from "../hub/tools/tv/import.js";
+import { convert, copyDrivePictures, COMMUNITY_FOLDER, parseCSV, parseDate, patternFrom, fromHtml, imageFrom, slideFrom } from "../hub/tools/tv/import.js";
 
 const today = new Date(2026, 9, 20); // Tue Oct 20 2026
 
@@ -49,7 +49,6 @@ test("convert the old sheets", () => {
     signature: [["Staff", "Drink", "Description", "Image"], ["Wheatyn", "Special", "Coconut", ""]],
     products: [["Name", "Blurb", "Image"], ["Kava", "Root", "christian|https://x.example/a.jpg"]],
     screens: [["Screen", "Slides", "Theme"], ["1", "welcome, kavatenders, spotlight, everyweek, feud, bogus", "orange"]],
-    community: ["abcdefghijklmnopqrstuv"],
   };
   const { sections, notes } = convert(rows, today);
   assert.deepEqual(sections.crew.roster.map((p) => p.id), ["josh", "daniel", "wheatyn", "sam", "kai"]);
@@ -65,7 +64,24 @@ test("convert the old sheets", () => {
   assert.deepEqual(sections.products.items[0].images, ["/board/assets/christian.jpg", "https://x.example/a.jpg"]);
   assert.deepEqual(sections.screens["1"].slides.map((s) => s.id), ["welcome", "crew", "tonight", "weekly", "feud"]);
   assert.equal(sections.screens["1"].theme, "orange");
-  assert.equal(sections.community.photos.length, 1);
+  assert.equal(sections.community.driveFolder, COMMUNITY_FOLDER);
+  assert.equal(sections.community.photos, undefined);
   assert.ok(notes.some((n) => n.includes("Mystery")));
   assert.ok(notes.some((n) => n.includes("1 already-past")));
+});
+
+test("Drive pictures are copied into the hub; failures are listed", async () => {
+  const d = (id) => `https://lh3.googleusercontent.com/d/${id}=w1600`;
+  const sections = {
+    crew: { roster: [{ name: "Josh", photo: d("a") }, { name: "Kai", photo: "/board/assets/crew/josh.jpg" }] },
+    events: { items: [{ title: "Trivia", image: d("b") }] },
+    products: { items: [{ name: "Kava", images: [d("c"), d("bad")] }] },
+    community: { driveFolder: "x" },
+  };
+  const seen = [];
+  const { copied, failed } = await copyDrivePictures(sections, async (u) => { seen.push(u); if (u.includes("bad")) throw new Error("no"); return `/hub?media=${seen.length}`; });
+  assert.equal(copied, 3); assert.deepEqual(failed, ["Kava"]);
+  assert.equal(sections.crew.roster[0].photo, "/hub?media=1");
+  assert.equal(sections.crew.roster[1].photo, "/board/assets/crew/josh.jpg");
+  assert.deepEqual(sections.products.items[0].images, ["/hub?media=3"]);
 });

@@ -6,10 +6,17 @@ import { fakeFirestore, fakeAuth, fakeBlobs } from "./fake-firestore.js";
 function setup() {
   const db = fakeFirestore();
   const media = fakeBlobs();
-  const call = makeApi({ db, auth: fakeAuth, now: () => new Date(), env: { PIN_PEPPER: "test-pepper", SETUP_CODE: "kava" }, media });
+  const fetched = [];
+  const fetchFn = async (url) => {
+    fetched.push(url);
+    const pic = url.includes("notpic") ? null : Buffer.from("drive-jpeg");
+    return { ok: !url.includes("missing"), status: url.includes("missing") ? 404 : 200, arrayBuffer: async () => (pic || Buffer.from("<html>")),
+      headers: { get: (k) => (k === "content-type" ? (pic ? "image/jpeg" : "text/html; charset=utf-8") : null) } };
+  };
+  const call = makeApi({ db, auth: fakeAuth, now: () => new Date(), env: { PIN_PEPPER: "test-pepper", SETUP_CODE: "kava" }, media, fetchFn });
   const loc = "mandarin";
   const api = (action, data = {}, token = null) => call(action, { loc, ...data }, token);
-  return { db, api, loc, media };
+  return { db, api, loc, media, fetched };
 }
 const rejects = (p, status, re) => assert.rejects(p, (e) => e.status === status && (!re || re.test(e.message)));
 
@@ -213,4 +220,19 @@ test("pictures: Manage on the tool can upload; others can't; bad input refused; 
 
   assert.equal(await readMedia(t.media, "../secret"), null);
   assert.equal(await readMedia(t.media, "mandarin.doesnotexist0000"), null);
+});
+
+test("copying a Google Drive picture into the hub", async () => {
+  const t = await bootstrapped();
+  const { src } = await t.api("mediaCopy", { tool: "tv", url: "https://lh3.googleusercontent.com/d/abc123=w1600" }, t.owner);
+  const pic = await readMedia(t.media, src.split("media=")[1]);
+  assert.equal(pic.type, "image/jpeg");
+  assert.equal(Buffer.from(pic.data).toString(), "drive-jpeg");
+  await rejects(t.api("mediaCopy", { tool: "tv", url: "https://evil.example.com/x.jpg" }, t.owner), 400);
+  await rejects(t.api("mediaCopy", { tool: "tv", url: "https://lh3.googleusercontent.com.evil.com/x" }, t.owner), 400);
+  await rejects(t.api("mediaCopy", { tool: "tv", url: "http://lh3.googleusercontent.com/d/x" }, t.owner), 400);
+  await rejects(t.api("mediaCopy", { tool: "tv", url: "https://lh3.googleusercontent.com/d/missing" }, t.owner), 502);
+  await rejects(t.api("mediaCopy", { tool: "tv", url: "https://lh3.googleusercontent.com/d/notpic" }, t.owner), 415);
+  await rejects(t.api("mediaCopy", { tool: "tv", url: "https://lh3.googleusercontent.com/d/abc" }), 401);
+  assert.equal(t.fetched.length, 3);
 });

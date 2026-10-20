@@ -17,6 +17,9 @@ const ID_RE = /^[a-z][a-z0-9-]{1,30}$/;
 export const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 export const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 export const MEDIA_ID_RE = /^[a-z][a-z0-9-]{1,30}\.[a-z0-9]{12,40}$/; // "<location>.<random>"
+// Pictures we'll copy in from Google Drive (used when moving off the old Google Sheets board).
+const COPY_HOSTS = /(^|\.)(googleusercontent\.com|drive\.google\.com)$/;
+
 // Tools that may upload pictures, and the access level needed.
 const MEDIA_TOOLS = { knowledge: 2, tv: 1 };
 
@@ -30,7 +33,7 @@ export async function readMedia(media, id) {
 
 // deps: { db, auth: { verifyIdToken, createCustomToken }, now: () => timestamp value,
 //         env: { PIN_PEPPER, SETUP_CODE }, media: { set(key, bytes, { metadata }), getWithMetadata(key, { type }) } }
-export function makeApi({ db, auth, now, env, media }) {
+export function makeApi({ db, auth, now, env, media, fetchFn = globalThis.fetch }) {
   /* ---------------- helpers ---------------- */
   const locRef = (loc) => db.doc(`locations/${loc}`);
   const userRef = (loc, uid) => db.doc(`locations/${loc}/users/${uid}`);
@@ -110,6 +113,14 @@ export function makeApi({ db, auth, now, env, media }) {
     const q = await db.collection(`locations/${loc}/users`)
       .where("roleId", "==", "owner").where("active", "==", true).get();
     return q.size;
+  }
+
+  async function storePic(c, tool, type, bytes) {
+    const id = `${c.loc}.${randomBytes(12).toString("hex")}`;
+    await media.set(id, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.length), {
+      metadata: { type, tool, by: c.me.uid, at: Date.now() },
+    });
+    return { src: `/.netlify/functions/hub?media=${id}`, bytes: bytes.length };
   }
 
   /* ---------------- actions ---------------- */
@@ -276,11 +287,31 @@ export function makeApi({ db, auth, now, env, media }) {
       const bytes = Buffer.from(m[2], "base64");
       if (!bytes.length) fail(400, "That picture is empty.");
       if (bytes.length > MAX_IMAGE_BYTES) fail(413, "That picture is too big (4 MB max).");
-      const id = `${c.loc}.${randomBytes(12).toString("hex")}`;
-      await media.set(id, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.length), {
-        metadata: { type: m[1], tool, by: c.me.uid, at: Date.now() },
-      });
-      return { src: `/.netlify/functions/hub?media=${id}`, bytes: bytes.length };
+      return storePic(c, tool, m[1], bytes);
+    },
+
+    // Copies a Google Drive picture into the hub's own picture storage, so nothing but the
+    // community photo folder depends on Drive after the import.
+    async mediaCopy(data, idToken) {
+      const c = await caller(idToken);
+      const tool = String(data.tool || "");
+      const need = MEDIA_TOOLS[tool];
+      if (!need) fail(400, "Pictures can't be added there.");
+      if (c.levelOf(tool) < need) fail(403, "You don't have access to add pictures here.");
+      if (!media) fail(500, "Picture storage isn't available.");
+      let url;
+      try { url = new URL(String(data.url || "")); } catch { fail(400, "That isn't a link."); }
+      if (url.protocol !== "https:" || !COPY_HOSTS.test(url.hostname)) fail(400, "Only Google Drive pictures can be copied in.");
+      let res;
+      try { res = await fetchFn(url.href, { redirect: "follow" }); } catch { fail(502, "Couldn't reach Google Drive."); }
+      if (!res.ok) fail(502, `Google Drive said ${res.status}.`);
+      const type = String(res.headers.get("content-type") || "").split(";")[0].trim();
+      if (!IMAGE_TYPES.includes(type)) fail(415, "That link isn't a picture (is the file shared with anyone who has the link?).");
+      if (Number(res.headers.get("content-length")) > MAX_IMAGE_BYTES) fail(413, "That picture is too big (4 MB max).");
+      const bytes = Buffer.from(await res.arrayBuffer());
+      if (!bytes.length) fail(400, "That picture is empty.");
+      if (bytes.length > MAX_IMAGE_BYTES) fail(413, "That picture is too big (4 MB max).");
+      return storePic(c, tool, type, bytes);
     },
 
     async adminCreateRole(data, idToken) {

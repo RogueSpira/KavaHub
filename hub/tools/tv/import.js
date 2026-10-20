@@ -13,10 +13,7 @@ export const SHEET_IDS = {
   products: "1vTk7iFpMkr3WG1TV1yyfAzwwTsBn3-I_AN49lJj37SU",
   signature: "1n_vS_MBhTpATXZaORPPT7ncKk3eHrZtw3Dv8ZkVgq4Y",
 };
-// The old board's Google Drive browser key (only lists the public community photo folder).
-// Split in two so Netlify's secret scanner doesn't stop the deploy over a key that was already public.
-const DRIVE_KEY = ["AIzaSyALMNYayRHEFMNdue8", "wA1nHNL5fYr8WtqM"].join("");
-const COMMUNITY_FOLDER = "1t6FrOFtB-I-MdaJaKMP5Z3oQyRdiDb3E";
+export const COMMUNITY_FOLDER = "1t6FrOFtB-I-MdaJaKMP5Z3oQyRdiDb3E";
 
 // Quote-aware CSV parser (handles commas inside cells like "Mon, July 27").
 export function parseCSV(text) {
@@ -42,11 +39,6 @@ export async function fetchSheets(fetchFn = fetch) {
       out[k] = parseCSV(await res.text());
     } catch { out[k] = []; failed.push(k); }
   }));
-  try {
-    const u = `https://www.googleapis.com/drive/v3/files?q=%27${COMMUNITY_FOLDER}%27+in+parents+and+trashed=false&key=${DRIVE_KEY}&fields=files(id,name)&pageSize=200`;
-    const d = await (await fetchFn(u, { cache: "no-store" })).json();
-    out.community = (d.files || []).filter((f) => /\.(jpe?g|png|webp|gif)$/i.test(f.name || "")).map((f) => f.id);
-  } catch { out.community = []; failed.push("community"); }
   return { rows: out, failed };
 }
 
@@ -199,10 +191,9 @@ export function convert(rows, today = new Date()) {
     }
     if (items.length) { sections.ticker = { items }; notes.push(`Ticker: ${items.length} messages.`); }
   }
-  if (rows.community?.length) {
-    sections.community = { photos: rows.community.map(driveImg), footer: "Send your photos to **Christian@kavaandcompany.com**" };
-    notes.push(`Community Photos: ${rows.community.length} (still stored in Google Drive).`);
-  }
+  // Community photos keep coming live from the Google Drive folder (the only part that still uses Drive).
+  sections.community = { driveFolder: COMMUNITY_FOLDER, footer: "Send your photos to **Christian@kavaandcompany.com**" };
+  notes.push("Community Photos: shown live from the Google Drive folder, same as now.");
 
   // Screens
   {
@@ -218,4 +209,22 @@ export function convert(rows, today = new Date()) {
     if (Object.keys(screens).length) { sections.screens = screens; notes.push(`Screens: ${Object.keys(screens).map((k) => `TV ${k}`).join(", ")}.`); }
   }
   return { sections, notes };
+}
+
+// Every Google Drive picture in the converted sections (they get copied into the hub during import).
+export const isDrive = (src) => /^https:\/\/lh3\.googleusercontent\.com\//.test(String(src || ""));
+export async function copyDrivePictures(sections, copy, onProgress = () => {}) {
+  const jobs = [];
+  for (const p of sections.crew?.roster || []) if (isDrive(p.photo)) jobs.push([p, "photo", p.name]);
+  for (const e of sections.events?.items || []) if (isDrive(e.image)) jobs.push([e, "image", e.title]);
+  for (const x of sections.signature?.items || []) if (isDrive(x.image)) jobs.push([x, "image", x.drink]);
+  for (const x of sections.products?.items || []) (x.images || []).forEach((src, i) => { if (isDrive(src)) jobs.push([x.images, i, x.name]); });
+  const failed = [];
+  for (const [n, [obj, key, label]] of jobs.entries()) {
+    onProgress(n + 1, jobs.length);
+    try { obj[key] = await copy(obj[key]); }
+    catch { failed.push(label || "a picture"); obj[key] = ""; }
+  }
+  for (const x of sections.products?.items || []) x.images = (x.images || []).filter(Boolean);
+  return { copied: jobs.length - failed.length, failed };
 }
