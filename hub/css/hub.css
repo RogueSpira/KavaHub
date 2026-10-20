@@ -108,7 +108,7 @@ button { cursor: pointer; }
 }
 
 /* ---------- home ---------- */
-.home { max-width: 1200px; margin: 0 auto; padding: 28px 20px calc(40px + var(--safe-b)); }
+.home { max-width: 1200px; margin: 0 auto; padding: 28px 20px calc(140px + var(--safe-b)); }
 .hello { font-family: var(--f-display); font-weight: 400; font-size: clamp(24px, 4vw, 38px); margin-bottom: 24px; }
 .hello em { font-style: normal; color: var(--lime); text-shadow: 0 0 18px rgba(182, 242, 74, .45); }
 .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 18px; }
@@ -129,7 +129,7 @@ button { cursor: pointer; }
 .accent-gold { --acc: var(--gold); } .accent-magenta { --acc: var(--magenta); } .accent-purple { --acc: var(--purple); }
 
 /* ---------- tool page ---------- */
-.tool { max-width: 1200px; margin: 0 auto; padding: 22px 20px calc(40px + var(--safe-b)); }
+.tool { max-width: 1200px; margin: 0 auto; padding: 22px 20px calc(140px + var(--safe-b)); }
 .tool-head { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
 .tool-head h1 { font-family: var(--f-display); font-weight: 400; font-size: clamp(22px, 3.4vw, 32px); }
 .tool-icon {
@@ -239,11 +239,11 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 @media (max-width: 640px) { .log-row { grid-template-columns: 1fr auto; } .log-time { grid-column: 1 / -1; } .log-what { grid-column: 1 / -1; } }
 
 /* ---------- toasts ---------- */
-#toasts { position: fixed; left: 50%; bottom: calc(20px + var(--safe-b)); transform: translateX(-50%); z-index: 200; display: grid; gap: 8px; width: max-content; max-width: calc(100vw - 32px); }
+#toasts { position: fixed; left: 50%; top: calc(74px + var(--safe-t)); transform: translateX(-50%); z-index: 200; display: grid; gap: 8px; width: max-content; max-width: calc(100vw - 32px); }
 .toast { padding: 12px 20px; border-radius: 999px; background: var(--cream); color: var(--ink); font-weight: 700; box-shadow: 0 10px 30px rgba(0, 0, 0, .5); transition: opacity .3s, transform .3s; text-align: center; }
 .toast-err { background: var(--red); color: #fff; }
 .toast-info { background: var(--aqua); }
-.toast.out { opacity: 0; transform: translateY(8px); }
+.toast.out { opacity: 0; transform: translateY(-8px); }
 
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 
@@ -295,7 +295,6 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .cl-tab.complete .cl-tab-count { color: var(--lime); font-weight: 700; }
 .cl-progress { height: 10px; border-radius: 999px; background: rgba(255, 243, 224, .1); overflow: hidden; margin-bottom: 14px; }
 .cl-progress-bar { height: 100%; background: linear-gradient(90deg, var(--lime), var(--green)); border-radius: 999px; transition: width .3s ease; }
-.cl-complete { text-align: center; font-family: var(--f-label); font-weight: 700; font-size: 19px; color: var(--lime); margin-bottom: 12px; }
 .cl-list { display: grid; gap: 8px; }
 .cl-row {
   display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; min-height: 62px; padding: 10px 16px;
@@ -399,3 +398,19 @@ button.cl-row:active { transform: scale(.99); }
 .kb-help summary { cursor: pointer; color: var(--muted); font-size: 14.5px; min-height: 30px; }
 .kb-help-grid { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin-top: 8px; font-size: 14.5px; color: var(--cream-dim); }
 .kb-help-grid code { color: var(--lime); font-size: 14px; }
+
+/* ---------- checklist submit ---------- */
+.cl-submitbar {
+  position: sticky; bottom: calc(12px + var(--safe-b)); z-index: 15; margin-top: 18px;
+  display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+  padding: 12px 14px 12px 20px; border-radius: 22px; background: rgba(12, 42, 48, .96);
+  border: 1.5px solid color-mix(in srgb, var(--lime) 45%, transparent);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, .55); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+.cl-submit-status { font-family: var(--f-label); font-weight: 600; color: var(--cream-dim); }
+.btn.cl-submit-btn { width: auto; min-width: 240px; }
+@media (max-width: 560px) { .btn.cl-submit-btn { width: 100%; } }
+.cl-submitted { font-family: var(--f-label); font-weight: 600; color: var(--lime); margin-bottom: 12px; }
+.cl-warn-list { padding-left: 22px; display: grid; gap: 4px; margin-top: 6px; }
+.cl-warn-list.crit li { color: #FF8A8A; font-weight: 700; }
+.cl-warn-list.norm li { color: var(--cream); }

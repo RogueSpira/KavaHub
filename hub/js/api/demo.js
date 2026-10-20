@@ -164,10 +164,10 @@ export async function revealPin(uid) {
 }
 
 /* ---------- roles ---------- */
-export async function saveRole(roleId, { name, perms }) {
+export async function setRoleAccess(roleId, toolId, level) {
   await wait(120);
   if (me()?.roleId !== "owner" || roleId === "owner") throw new Error("Only an Owner can change roles.");
-  Object.assign(store.roles[roleId], { name, perms });
+  store.roles[roleId].perms = { ...store.roles[roleId].perms, [toolId]: level };
   changed();
 }
 export async function createRole(name, rank) {
@@ -244,6 +244,8 @@ const clDays = {}; // `${date}_${listId}` -> run
     run(y, "opening", "Josh", [0, 1, 2, 3, 4, 5], 9);
     run(y, "shift", "Daniel", [0, 1, 2, 3], 15);
     run(y, "closing", "Wheatyn", [0, 1, 2, 5, 7, 8], 22);
+    clDays[`${y}_closing`].submitted = { by: "Wheatyn", byUid: null, at: at(y, 22, 40), done: 6, total: 9, skippedCritical: ["Keg count"] };
+    clDays[`${y}_opening`].submitted = { by: "Josh", byUid: null, at: at(y, 9, 30), done: 6, total: 6, skippedCritical: [] };
     run(t, "opening", "Daniel", [0, 1, 2], 9);
   }
 }
@@ -265,6 +267,14 @@ export async function setChecklistItem(session, { dateKey, dayStart, listId, lis
   r.items = structuredClone(items); r.listName = listName;
   if (checked) r.checks[item.id] = { text: item.text, by: session.me.name, byUid: session.uid, at: now() };
   else delete r.checks[item.id];
+  changed();
+}
+export async function submitChecklist(session, { dateKey, dayStart, listId, listName, items }, { done, total, skippedCritical }) {
+  await wait(120);
+  const k = `${dateKey}_${listId}`;
+  const r = clDays[k] || (clDays[k] = { date: dateKey, listId, listName, dayStart, items: [], checks: {} });
+  r.items = structuredClone(items); r.listName = listName;
+  r.submitted = { by: session.me.name, byUid: session.uid, at: now(), done, total, skippedCritical };
   changed();
 }
 export function watchChecklistHistory(since, cb) {

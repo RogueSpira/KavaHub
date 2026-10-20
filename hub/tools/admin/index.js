@@ -47,7 +47,10 @@ export function mount(el, ctx) {
     p.append(h("div", { class: "pane-head" },
       h("p", { class: "muted" }, "Everyone signs in with their own 4-digit PIN. Each PIN must be unique."), addBtn), list);
     let users = [];
-    const stop = api.watchUsers((u) => { users = u; paint(); });
+    const stop = api.watchUsers((u) => {
+      if (!u) { clear(list).append(h("p", { class: "modal-err" }, "Couldn't load people.")); return; }
+      users = u; paint();
+    });
     function paint() {
       clear(list);
       const active = users.filter((u) => u.active), inactive = users.filter((u) => !u.active);
@@ -174,7 +177,7 @@ export function mount(el, ctx) {
               r.perms?.[t.id] ?? 0,
               async (v) => {
                 try {
-                  await api.saveRole(r.id, { name: r.name, perms: { ...r.perms, [t.id]: v } });
+                  await api.setRoleAccess(r.id, t.id, v);
                   toast(`${r.name}: ${t.name} → ${LEVEL_NAMES[v]}`);
                   ctx.log("Changed role access", `${r.name}: ${t.name} → ${LEVEL_NAMES[v]}`);
                 }
@@ -183,8 +186,7 @@ export function mount(el, ctx) {
       wrap.append(table);
     };
     paint();
-    const iv = setInterval(paint, 800); // picks up live role changes from the session
-    return () => clearInterval(iv);
+    return ctx.onSessionChange(paint); // repaint when roles change (here or on another device)
 
     async function addRole() {
       const name = h("input", { class: "input", type: "text", placeholder: "e.g. Shift Lead", autocomplete: "off" });
@@ -217,7 +219,7 @@ export function mount(el, ctx) {
     };
     const paint = () => {
       const items = ordered();
-      const sig = JSON.stringify(items.map((x) => x.c));
+      const sig = JSON.stringify(items.map((x) => [x.t.id, x.c.enabled, x.c.order]));
       if (sig === lastSig) return; lastSig = sig;
       clear(list);
       items.forEach(({ t, c }, i) => list.append(h("div", { class: `row static${c.enabled ? "" : " row-off"}` },
@@ -231,8 +233,12 @@ export function mount(el, ctx) {
           t.id === "admin" ? h("span", { class: "chip" }, "Always on")
             : seg([{ value: true, label: "On" }, { value: false, label: "Off" }], c.enabled,
               async (v) => {
-                await save(items.map((x) => (x.t.id === t.id ? { ...x, c: { ...x.c, enabled: v } } : x)));
-                ctx.log("Changed tile", `${t.name} turned ${v ? "on" : "off"}`);
+                try {
+                  const list = ordered();
+                  const at = list.findIndex((x) => x.t.id === t.id);
+                  await api.saveTool(t.id, { enabled: v, order: at < 0 ? i : at });
+                  ctx.log("Changed tile", `${t.name} turned ${v ? "on" : "off"}`);
+                } catch (e) { toast(e.message, "err"); }
               }, { small: true })))));
     };
     async function move(i, d) {
@@ -251,8 +257,7 @@ export function mount(el, ctx) {
       } catch (e) { toast(e.message, "err"); }
     }
     paint();
-    const iv = setInterval(paint, 500);
-    return () => clearInterval(iv);
+    return ctx.onSessionChange(paint); // repaint when tiles change
   }
 
   /* ================= Activity ================= */
@@ -262,6 +267,7 @@ export function mount(el, ctx) {
     const toolName = (id) => TOOLS.find((t) => t.id === id)?.name || id;
     const stop = api.watchActivity((items) => {
       clear(list);
+      if (!items) { list.append(h("p", { class: "modal-err" }, "Couldn't load the activity log.")); return; }
       if (!items.length) list.append(h("p", { class: "muted" }, "Nothing yet."));
       for (const a of items) {
         list.append(h("div", { class: "log-row" },

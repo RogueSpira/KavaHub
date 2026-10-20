@@ -66,11 +66,12 @@ function today(pane, ctx) {
     for (const l of LISTS) {
       const r = rowsFor(l.id);
       const complete = r.total > 0 && r.done === r.total;
+      const sub = runs?.[l.id]?.submitted;
       tabsEl.append(h("button", { type: "button", role: "tab", "aria-selected": String(l.id === current),
-        class: `cl-tab${l.id === current ? " on" : ""}${complete ? " complete" : ""}`,
+        class: `cl-tab${l.id === current ? " on" : ""}${sub || complete ? " complete" : ""}`,
         onclick: () => { current = l.id; paint(); } },
         h("span", { class: "cl-tab-name" }, `${l.icon} ${tpl(l.id).name || l.name}`),
-        h("span", { class: "cl-tab-count" }, r.total ? (complete ? "✓ Done" : `${r.done} / ${r.total}`) : "—")));
+        h("span", { class: "cl-tab-count" }, sub ? "✓ Submitted" : r.total ? (complete ? "All checked" : `${r.done} / ${r.total}`) : "—")));
     }
     clear(body);
     const r = rowsFor(current);
@@ -83,11 +84,52 @@ function today(pane, ctx) {
     const pct = r.total ? Math.round((r.done / r.total) * 100) : 0;
     body.append(h("div", { class: "cl-progress", "aria-label": `${r.done} of ${r.total} done` },
       h("div", { class: "cl-progress-bar", style: { width: `${pct}%` } })));
-    if (r.done === r.total && r.total) body.append(h("div", { class: "cl-complete" }, `🎉 ${tpl(current).name} list complete`));
+    const sub = runs?.[current]?.submitted;
+    if (sub) body.append(h("div", { class: `cl-submitted${sub.skippedCritical?.length ? " crit" : ""}` },
+      `✓ Submitted by ${sub.by} · ${timeLabel(sub.at)}`,
+      sub.skippedCritical?.length ? h("span", { class: "crit-text" }, ` — ${sub.skippedCritical.length} critical not done`) : ""));
     const list = h("div", { class: "cl-list" });
     for (const it of r.items) list.append(row(it, r.checks[it.id]));
     for (const it of r.extra) list.append(row(it, r.checks[it.id]));
     body.append(list);
+    body.append(h("div", { class: "cl-submitbar" },
+      h("span", { class: "cl-submit-status" }, `${r.done} of ${r.total} done`),
+      h("button", { class: "btn primary big cl-submit-btn", type: "button", onclick: submit },
+        sub ? `Submit ${tpl(current).name} again` : `Submit ${tpl(current).name} list`)));
+  }
+
+  // Submit: warns first if anything Critical (or Normal) is unchecked; Low items never block.
+  async function submit() {
+    const t = tpl(current), r = rowsFor(current);
+    const skipped = r.items.filter((i) => !r.checks[i.id]);
+    const crit = skipped.filter((i) => priorityOf(i) === "critical");
+    const normal = skipped.filter((i) => priorityOf(i) === "normal");
+    const low = skipped.filter((i) => priorityOf(i) === "low");
+    const listOf = (items, cls) => h("ul", { class: `cl-warn-list ${cls}` }, items.map((i) => h("li", {}, i.text)));
+    if (crit.length || normal.length) {
+      const body = h("div", { class: "form" },
+        crit.length ? h("div", {}, h("p", { class: "crit-text" }, `${crit.length} critical ${crit.length === 1 ? "item isn't" : "items aren't"} done:`), listOf(crit, "crit")) : null,
+        normal.length ? h("div", {}, h("p", { class: "warn-text" }, `${normal.length} ${normal.length === 1 ? "item isn't" : "items aren't"} checked:`), listOf(normal, "norm")) : null,
+        low.length ? h("p", { class: "muted small" }, `${low.length} low-priority ${low.length === 1 ? "item" : "items"} unchecked (that's okay).`) : null,
+        h("p", {}, crit.length ? "Go back and finish them, or submit anyway and they'll be flagged for the next shift and managers." : "Go back and finish them, or submit anyway."));
+      const ok = await modal({
+        title: crit.length ? "⚠ Critical items not done" : "Some items aren't checked",
+        body,
+        actions: [
+          { label: "Go back", kind: "primary", value: false },
+          { label: "Submit anyway", kind: crit.length ? "danger" : "", value: true },
+        ],
+      });
+      if (ok !== true) return;
+    }
+    try {
+      await api.submitChecklist(ctx.session(), {
+        dateKey: key, dayStart: dayStartOf(key), listId: current, listName: t.name, items: t.items, hasRun: !!runs?.[current],
+      }, { done: r.done, total: r.total, skippedCritical: crit.map((i) => i.text) });
+      toast(`${t.name} list submitted${crit.length ? " — critical items flagged" : " ✓"}`, crit.length ? "info" : "ok");
+      ctx.log(`Submitted ${t.name} list`, `${r.done}/${r.total} done${crit.length ? `; critical not done: ${crit.map((i) => i.text).join(", ")}` : ""}`.slice(0, 300));
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch (e) { toast(e.message || "Couldn't submit.", "err"); }
   }
 
   function row(item, check) {
@@ -106,9 +148,8 @@ function today(pane, ctx) {
       await api.setChecklistItem(ctx.session(), {
         dateKey: key, dayStart: dayStartOf(key), listId: current, listName: t.name, items: t.items,
       }, item, checked);
-      if (checked && !item.removed && before.done + 1 === before.total) {
-        toast(`${t.name} list complete 🎉`);
-        ctx.log(`Completed ${t.name} list`, dayLabel(key));
+      if (checked && !item.removed && before.done + 1 === before.total && !runs?.[current]?.submitted) {
+        toast(`All checked — tap Submit at the bottom 🎉`);
       }
     } catch (e) { toast(e.message || "Couldn't save that.", "err"); }
   }
@@ -130,7 +171,10 @@ function today(pane, ctx) {
         s.skippedOther.length ? h("span", { class: "cl-skip-line" }, h("span", { class: "warn-text" }, `${s.skippedOther.length} skipped:`), names(s.skippedOther, "chip-soon")) : null,
         s.skippedLow.length ? h("span", { class: "cl-skip-line" }, h("span", { class: "muted" }, `${s.skippedLow.length} low-priority skipped:`), names(s.skippedLow, "pr-low")) : null);
     }
-    card.append(h("summary", {}, h("span", { class: "cl-last-sum" }, summary, lastNight ? h("span", { class: "muted small cl-last-hint" }, "Tap to see the whole list") : null)));
+    const subLine = !lastNight ? null : lastNight.submitted
+      ? h("span", { class: "muted small" }, `Submitted by ${lastNight.submitted.by} · ${timeLabel(lastNight.submitted.at)}`)
+      : h("span", { class: "warn-text small" }, "Not submitted");
+    card.append(h("summary", {}, h("span", { class: "cl-last-sum" }, summary, subLine, lastNight ? h("span", { class: "muted small cl-last-hint" }, "Tap to see the whole list") : null)));
     if (lastNight) card.append(readOnlyList(lastNight));
     lastCard.append(card);
   }
@@ -234,6 +278,8 @@ function dayDetail(pane, ctx, dateKey) {
           h("span", { class: `chip ${!r ? (live ? "" : "chip-off") : live && s.skipped.length ? "" : flagged ? "pr-critical" : s.skippedOther.length ? "chip-soon" : "chip-ok"}` },
             !r ? "Not started" : `${s.done} / ${s.total}${live && s.skipped.length ? " so far" : ""}`),
           flagged ? h("span", { class: "crit-text small" }, `⚠ ${s.skippedCritical.length} critical skipped`) : null),
+        r ? h("p", { class: `small ${r.submitted ? "muted" : live ? "muted" : "warn-text"}` },
+          r.submitted ? `Submitted by ${r.submitted.by} · ${timeLabel(r.submitted.at)}` : live ? "Not submitted yet" : "Not submitted") : null,
         r ? readOnlyList(r, live) : null));
     }
   });

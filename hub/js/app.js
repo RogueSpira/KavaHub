@@ -1,14 +1,15 @@
 // Kava Hub — app shell: PIN pad, first-time setup, home tiles, tool host, auto-lock.
 import api from "./api/index.js";
 import { h, clear, toast } from "./ui.js";
-import { TOOLS, toolById } from "../tools/registry.js";
+import { TOOLS } from "../tools/registry.js";
 import { levelFor } from "./perms.js";
-import { DEMO_MODE, PIN_LENGTH } from "./config.js";
+import { DEMO_MODE, PIN_LENGTH, LOCATION_ID } from "./config.js";
 
 const root = document.getElementById("app");
 let session = null;
 let needsSetup = false;
 let current = { key: null, cleanup: null }; // what's on screen
+const sessionWatchers = new Set(); // tools that want to know when access/roles/tiles change
 
 /* ================= tiles the signed-in person can see ================= */
 export function visibleTools(s = session) {
@@ -107,6 +108,7 @@ function pinScreen() {
         // onSession takes over from here
       } catch (e) {
         msg.textContent = e.message || "That PIN didn't work.";
+        recheckSetup();
         card.classList.remove("shake"); void card.offsetWidth; card.classList.add("shake");
         digits = ""; paint();
       } finally { busy = false; card.classList.remove("busy"); }
@@ -193,6 +195,8 @@ function toolScreen({ t, level }, sub) {
     const ctx = {
       tool: t, level, sub, api, toast, navigate,
       session: () => session,
+      // Call fn whenever the signed-in session changes (roles, tiles, settings…). Returns a stop function.
+      onSessionChange: (fn) => { sessionWatchers.add(fn); return () => sessionWatchers.delete(fn); },
       base: `#/tool/${t.id}`,
       log: (action, detail) => api.log(session, t.id, action, detail),
     };
@@ -221,20 +225,44 @@ function connectError(message) {
     h("button", { class: "btn primary big", type: "button", onclick: () => location.reload() }, "Try again"))));
 }
 
+// Remembers that this location is already set up, so the app doesn't wait on the
+// server before showing the PIN pad.
+const SETUP_KEY = `kh-setup-done-${api.mode}-${LOCATION_ID}`;
+const setupKnownDone = () => { try { return localStorage.getItem(SETUP_KEY) === "1"; } catch { return false; } };
+const rememberSetupDone = () => { try { localStorage.setItem(SETUP_KEY, "1"); } catch { /* private mode */ } };
+// After a failed PIN, double-check with the server in case the location was reset and needs setup again.
+async function recheckSetup() {
+  try {
+    if ((await api.setupStatus()).needsSetup) {
+      try { localStorage.removeItem(SETUP_KEY); } catch { /* ignore */ }
+      needsSetup = true;
+      render(true);
+    }
+  } catch { /* offline: the PIN pad already shows the error */ }
+}
+
 async function start() {
-  try { needsSetup = (await api.setupStatus()).needsSetup; }
-  catch (e) {
-    console.warn("[hub] setup check failed", e);
-    connectError(e.message || String(e));
-    return;
+  if (!setupKnownDone()) {
+    try {
+      needsSetup = (await api.setupStatus()).needsSetup;
+      if (!needsSetup) rememberSetupDone();
+    } catch (e) {
+      console.warn("[hub] setup check failed", e);
+      connectError(e.message || String(e));
+      return;
+    }
   }
   api.onSession((s) => {
     const was = session;
     session = s;
-    if (!s && was) { navigate("#/"); }
-    if (s && !was) { needsSetup = false; if (location.hash !== "#/" && location.hash) navigate("#/"); }
+    if (!s && was) {
+      document.querySelectorAll(".modal-back").forEach((m) => m.remove()); // don't leave a popup over the PIN pad
+      navigate("#/");
+    }
+    if (s && !was) { needsSetup = false; rememberSetupDone(); if (location.hash !== "#/" && location.hash) navigate("#/"); }
     resetIdle();
     render();
+    if (s) sessionWatchers.forEach((fn) => { try { fn(s); } catch (e) { console.warn(e); } });
   });
   render();
 }

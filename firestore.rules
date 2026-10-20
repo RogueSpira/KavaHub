@@ -141,12 +141,13 @@ service cloud.firestore {
       // One document per business day per list ("2026-10-20_closing"), holding who checked what.
       // - Manage can read every day (history). Use can read only the last ~2 days
       //   (today + last night's close).
-      // - Each write changes exactly one item. A check must be in your own name and stamped
-      //   with the server's time; anyone can uncheck. Only today's lists can be changed.
+      // - A write either changes exactly one item (named in lastItem) or records a Submit.
+      //   Checks and submits must be in your own name and stamped with the server's time;
+      //   anyone can uncheck. Only today's lists can be changed.
       match /tools-data/checklists/days/{dayId} {
         function recentDay(d) { return d.dayStart > request.time - duration.value(60, 'h'); }
         function validDay(d) {
-          return d.keys().hasOnly(['date', 'listId', 'listName', 'dayStart', 'items', 'checks', 'updatedAt'])
+          return d.keys().hasOnly(['date', 'listId', 'listName', 'dayStart', 'items', 'checks', 'lastItem', 'submitted', 'updatedAt'])
             && d.listId in ['opening', 'shift', 'closing']
             && dayId == d.date + '_' + d.listId
             && d.dayStart is timestamp
@@ -157,27 +158,43 @@ service cloud.firestore {
             && d.checks is map
             && d.updatedAt == request.time;
         }
+        // Exactly one item changed, and it's the one named in lastItem.
         function oneCheck(before) {
-          let after = request.resource.data.checks;
-          let changed = after.diff(before).affectedKeys();
-          let k = changed.toList()[0];
-          return changed.size() == 1
-            && (!(k in after)
-              || (after[k].byUid == request.auth.uid
-                && after[k].by == me(loc).name
-                && after[k].at == request.time
-                && after[k].text is string && after[k].text.size() <= 200));
+          let d = request.resource.data;
+          let k = d.get('lastItem', null);
+          let changed = d.checks.diff(before).affectedKeys();
+          return k is string
+            && changed.size() == 1
+            && changed.hasOnly([k])
+            && (!(k in d.checks)
+              || (d.checks[k].byUid == request.auth.uid
+                && d.checks[k].by == me(loc).name
+                && d.checks[k].at == request.time
+                && d.checks[k].text is string && d.checks[k].text.size() <= 200));
+        }
+        function validSubmit(s) {
+          return s is map
+            && s.keys().hasOnly(['by', 'byUid', 'at', 'done', 'total', 'skippedCritical'])
+            && s.byUid == request.auth.uid
+            && s.by == me(loc).name
+            && s.at == request.time
+            && s.done is int && s.total is int
+            && s.skippedCritical is list && s.skippedCritical.size() <= 150;
         }
         allow read: if can(loc, 'checklists', 2)
           || (can(loc, 'checklists', 1) && (resource == null || recentDay(resource.data)));
         allow create: if can(loc, 'checklists', 1)
           && validDay(request.resource.data)
-          && oneCheck({});
+          && ((oneCheck({}) && !('submitted' in request.resource.data))
+            || (request.resource.data.checks.size() == 0 && validSubmit(request.resource.data.get('submitted', null))));
         allow update: if can(loc, 'checklists', 1)
           && validDay(request.resource.data)
           && request.resource.data.dayStart == resource.data.dayStart
           && request.resource.data.date == resource.data.date
-          && oneCheck(resource.data.checks);
+          && ((oneCheck(resource.data.checks)
+                && request.resource.data.get('submitted', null) == resource.data.get('submitted', null))
+            || (request.resource.data.checks == resource.data.checks
+                && validSubmit(request.resource.data.get('submitted', null))));
         allow delete: if false;
       }
     }

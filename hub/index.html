@@ -16,6 +16,11 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bungee&family=DM+Sans:wght@400;500;700&family=Fredoka:wght@500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/hub.css">
+<!-- Start fetching the app and the Firebase SDK in parallel. Keep the version in sync with FIREBASE_SDK_VERSION in js/config.js. -->
+<link rel="modulepreload" href="js/app.js">
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js" crossorigin>
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js" crossorigin>
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js" crossorigin>
 </head>
 <body>
 <div id="app" aria-live="polite"><div class="boot">Loading…</div></div>

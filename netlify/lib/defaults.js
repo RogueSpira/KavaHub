@@ -1,7 +1,5 @@
 // Starting data written when the owner first sets up a location.
 // Access levels: 0 = hidden, 1 = use, 2 = manage.
-export const LEVEL = { HIDDEN: 0, USE: 1, MANAGE: 2 };
-
 // Tool ids must match the `id` in each hub/tools/<id>/manifest.js.
 export const TOOL_IDS = ["tv", "checklists", "knowledge", "suggestions", "admin"];
 

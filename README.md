@@ -5,10 +5,16 @@ gets a home screen of tiles. Their role (plus any per-person overrides) decides 
 tiles they see and whether they can **use** or **manage** each one. It runs in the
 browser on the POS iPad, a tablet or a phone, and can be added to the home screen as an app.
 
-**Built so far (phase 1):** PIN sign-in, auto-lock, home tiles, and Administration
-(people & PINs, roles & access grid, tiles on/off and order, activity log, settings).
-TV Screens, Opening & Closing, Inventory Requests, Suggestion Box and Complaints are
-tiles marked "Soon".
+**Tiles so far**
+- **Administration:** people & PINs (admins can view a PIN; each view is logged), roles &
+  access grid, tiles on/off and order, activity log, settings.
+- **Opening & Closing:** Opening, Shift Change and Closing lists; each check records who and
+  when; Critical / Normal / Low priorities; Submit with a warning when critical items are
+  missed; last night's close for kavatenders; full history and list editing for managers.
+- **Knowledge Bank:** how-to guides, recipes and knowledge with search and categories.
+- **Suggestion Box:** a shared board of named suggestions with manager status and replies.
+- **TV Screens:** marked "Soon". Inventory Requests and Complaints are shelved (folders kept,
+  not on the home screen).
 
 **Where it runs**
 - **Netlify:** hosts the web app, plus one Netlify Function that checks PINs and handles
@@ -18,11 +24,11 @@ tiles marked "Soon".
 
 ## Try it without any setup (demo mode)
 
-While `hub/js/config.js` has `firebaseConfig = null`, the hub runs on sample data in
-memory. Nothing is saved.
+Add `?demo` to the address (or set `firebaseConfig = null` in `hub/js/config.js`) and the
+hub runs on sample data in memory. Nothing is saved.
 
 ```bash
-cd hub && python3 -m http.server 8000     # then open http://localhost:8000
+cd hub && python3 -m http.server 8000     # then open http://localhost:8000/?demo
 ```
 
 Sample PINs: Rogue (Owner) **2580** · Josh (Manager) **3690** · Daniel **1357** · Wheatyn **2468**.
@@ -44,9 +50,10 @@ test/                        server tests (npm test)
 ```
 
 **How PINs are kept safe**
-- PINs are never stored. Each PIN becomes a keyed hash (HMAC with `PIN_PEPPER`, a secret
-  only the Netlify Function knows), so the server can find who owns a PIN and make sure
-  no two people share one.
+- PINs are never stored as plain numbers. Each PIN becomes a keyed hash (HMAC with
+  `PIN_PEPPER`, a secret only the Netlify Function knows), so the server can find who owns
+  a PIN and make sure no two people share one. When an admin taps Show PIN, the server
+  works the PIN back out by checking all 10,000 possibilities.
 - After a correct PIN, the function signs the person into Firebase.
 - From then on, the database security rules read their role and access live, so role
   changes and deactivations take effect immediately.
@@ -97,14 +104,14 @@ KavaVote.
    - Save `PIN_PEPPER` somewhere safe (a password manager) and **never change it**.
      Changing it makes every PIN stop working.
    - Once these are in Netlify, you can delete the downloaded key file.
-3. **Deploys → Trigger deploy → Deploy site**, so the function picks up the variables.
+3. Also add `SECRETS_SCAN_SMART_DETECTION_OMIT_VALUES` = the `apiKey` value from
+   `hub/js/config.js`. Netlify's secret scanner otherwise blocks deploys because it mistakes
+   that public Firebase key for a secret. (This has to be set here; `netlify.toml` isn't enough.)
+4. **Deploys → Trigger deploy → Deploy site**, so the function picks up the variables.
 
 ### 5. Publish the database rules (one time, and whenever `firestore.rules` changes)
-```bash
-npm install -g firebase-tools
-firebase login
-firebase deploy --only firestore:rules
-```
+Firebase console → **Firestore Database → Rules** → replace everything with the contents
+of `firestore.rules` → **Publish**. (Or, with the Firebase CLI: `firebase deploy --only firestore:rules`.)
 
 ### 6. Allow your Netlify address in Firebase
 Firebase console → **Authentication → Settings → Authorized domains** → **Add domain** →
@@ -131,27 +138,32 @@ loaded and which settings are present (no secret values are shown).
 | "Something went wrong on the server" | Check Netlify → Logs → Functions → `hub`. |
 | Setup code "isn't right" | The code you typed doesn't match `SETUP_CODE`. Variable changes need a redeploy. |
 | PIN works but the screen goes straight back to the PIN pad | The rules from step 5 aren't published, so the hub can't read your account. |
-| Yellow "Demo mode" bar | `firebaseConfig` in `config.js` is still `null`. |
+| Yellow "Demo mode" bar | The address has `?demo` in it, or `firebaseConfig` in `config.js` is `null`. |
+| A device still shows the old version after an update | Close the hub and reopen it (Ctrl+F5 on a computer). |
 
 ### Updating later
 - **App and server changes:** push to GitHub and Netlify redeploys automatically.
-- **`firestore.rules` changes:** run `firebase deploy --only firestore:rules` (or `npm run rules`).
+- **`firestore.rules` changes:** paste into Firebase console → Firestore → Rules → Publish.
 
 ## Tests
 `npm install && npm test` runs the server logic (setup, PIN sign-in, adding and changing
-people, role ranks, last-Owner protection, PIN uniqueness) against an in-memory stand-in
-for Firestore.
+people, role ranks, last-Owner protection, PIN uniqueness, Show PIN) against an in-memory
+stand-in for Firestore.
 
 ## Default access
 
 | Tool | Owner | Manager | Kavatender |
 |---|---|---|---|
+For a brand-new location setup:
+
+| Tool | Owner | Manager | Kavatender |
+|---|---|---|---|
 | TV Screens | Full | Manage | Use |
 | Opening & Closing | Full | Manage | Use |
-| Inventory Requests | Full | Manage | Use |
+| Knowledge Bank | Full | Manage | Use |
 | Suggestion Box | Full | Manage | Use |
-| Complaints | Full | Manage | Use |
 | Administration | Full | Hidden | Hidden |
 
-All of this is editable in Admin → Roles & Access, and for one person at a time in their
-People entry.
+A tool added after setup starts hidden for every role except Owner, so grant it in
+Admin → Roles & Access. Everything is editable there, and for one person at a time in
+their People entry.

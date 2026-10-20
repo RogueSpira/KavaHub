@@ -34,6 +34,9 @@ async function call(action, data) {
   }
   return body;
 }
+// Show an estimated time for our own just-saved changes instead of a blank.
+const EST = { serverTimestamps: "estimate" };
+const tsToDate = (v) => v?.toDate?.() || v || null;
 const col = (p) => F.collection(db, `locations/${loc}/${p}`);
 const docRef = (p) => F.doc(db, `locations/${loc}${p ? "/" + p : ""}`);
 
@@ -75,7 +78,8 @@ export function onSession(cb) {
 
 /* ---------- people ---------- */
 export function watchUsers(cb) {
-  return F.onSnapshot(F.query(col("users"), F.orderBy("name")), (q) => cb(q.docs.map((d) => ({ uid: d.id, ...d.data() }))));
+  return F.onSnapshot(F.query(col("users"), F.orderBy("name")), (q) => cb(q.docs.map((d) => ({ uid: d.id, ...d.data(EST) }))),
+    (e) => { console.warn("[hub] people", e); cb(null, e); });
 }
 export const createUser = (d) => call("adminCreateUser", d);
 export const updateUser = (uid, patch) => call("adminUpdateUser", { uid, ...patch });
@@ -83,7 +87,8 @@ export const resetPin = (uid, pin) => call("adminResetPin", { uid, pin });
 export const revealPin = async (uid) => (await call("adminRevealPin", { uid })).pin;
 
 /* ---------- roles ---------- */
-export const saveRole = (roleId, { name, perms }) => F.updateDoc(docRef(`roles/${roleId}`), { name, perms });
+// Changes one tool's access for one role (only that field, so quick back-to-back changes never overwrite each other).
+export const setRoleAccess = (roleId, toolId, level) => F.updateDoc(docRef(`roles/${roleId}`), { [`perms.${toolId}`]: level });
 export const createRole = (name, rank) => call("adminCreateRole", { name, rank });
 export const deleteRole = (roleId) => call("adminDeleteRole", { roleId });
 
@@ -94,7 +99,8 @@ export const saveSettings = (settings) => F.updateDoc(docRef(""), { settings });
 /* ---------- activity ---------- */
 export function watchActivity(cb, max = 150) {
   return F.onSnapshot(F.query(col("activity"), F.orderBy("at", "desc"), F.limit(max)),
-    (q) => cb(q.docs.map((d) => { const x = d.data(); return { id: d.id, ...x, at: x.at?.toDate?.() || null }; })));
+    (q) => cb(q.docs.map((d) => { const x = d.data(EST); return { id: d.id, ...x, at: x.at?.toDate?.() || null }; })),
+    (e) => { console.warn("[hub] activity", e); cb(null, e); });
 }
 export async function log(session, tool, action, detail = "") {
   try {
@@ -109,7 +115,7 @@ export async function log(session, tool, action, detail = "") {
 const suggCol = () => col("tools-data/suggestions/items");
 export function watchSuggestions(cb) {
   return F.onSnapshot(F.query(suggCol(), F.orderBy("createdAt", "desc"), F.limit(300)),
-    (q) => cb(q.docs.map((d) => { const x = d.data(); return { id: d.id, ...x, createdAt: x.createdAt?.toDate?.() || null, respondedAt: x.respondedAt?.toDate?.() || null }; })),
+    (q) => cb(q.docs.map((d) => { const x = d.data(EST); return { id: d.id, ...x, createdAt: tsToDate(x.createdAt), respondedAt: tsToDate(x.respondedAt) }; })),
     (e) => { console.warn("[hub] suggestions listener", e); cb(null, e); });
 }
 export const addSuggestion = (session, text) => F.addDoc(suggCol(), {
@@ -123,13 +129,13 @@ export const deleteSuggestion = (id) => F.deleteDoc(F.doc(suggCol(), id));
 /* ---------- Opening & Closing checklists ---------- */
 const CL = "tools-data/checklists";
 const CL_LISTS = ["opening", "shift", "closing"];
-const tsToDate = (v) => v?.toDate?.() || v || null;
 function dayDoc(d) {
   if (!d.exists()) return null;
-  const x = d.data();
+  const x = d.data(EST);
   const checks = {};
   for (const [k, c] of Object.entries(x.checks || {})) checks[k] = { ...c, at: tsToDate(c.at) };
-  return { ...x, checks, dayStart: tsToDate(x.dayStart) };
+  const submitted = x.submitted ? { ...x.submitted, at: tsToDate(x.submitted.at) } : null;
+  return { ...x, checks, submitted, dayStart: tsToDate(x.dayStart) };
 }
 export function watchChecklistTemplates(cb) {
   return F.onSnapshot(col(`${CL}/lists`),
@@ -154,6 +160,17 @@ export function setChecklistItem(session, { dateKey, dayStart, listId, listName,
     checks: { [item.id]: checked
       ? { text: item.text, by: session.me.name, byUid: session.uid, at: F.serverTimestamp() }
       : F.deleteField() },
+    lastItem: item.id,
+    updatedAt: F.serverTimestamp(),
+  }, { merge: true });
+}
+// Submit a list: records who submitted, when, and what was left undone.
+export function submitChecklist(session, { dateKey, dayStart, listId, listName, items, hasRun }, { done, total, skippedCritical }) {
+  return F.setDoc(docRef(`${CL}/days/${dateKey}_${listId}`), {
+    date: dateKey, listId, listName, dayStart,
+    items: items.map(({ id, text, priority }) => ({ id, text, priority: priority || "normal" })),
+    ...(hasRun ? {} : { checks: {} }),
+    submitted: { by: session.me.name, byUid: session.uid, at: F.serverTimestamp(), done, total, skippedCritical },
     updatedAt: F.serverTimestamp(),
   }, { merge: true });
 }
@@ -166,7 +183,7 @@ export function watchChecklistHistory(since, cb) {
 
 /* ---------- Knowledge Bank ---------- */
 const kbCol = () => col("tools-data/knowledge/articles");
-const kbDoc = (d) => { const x = d.data(); return { id: d.id, ...x, createdAt: tsToDate(x.createdAt), updatedAt: tsToDate(x.updatedAt) }; };
+const kbDoc = (d) => { const x = d.data(EST); return { id: d.id, ...x, createdAt: tsToDate(x.createdAt), updatedAt: tsToDate(x.updatedAt) }; };
 export function watchArticles(cb) {
   return F.onSnapshot(F.query(kbCol(), F.orderBy("title"), F.limit(1000)),
     (q) => cb(q.docs.map(kbDoc)),
