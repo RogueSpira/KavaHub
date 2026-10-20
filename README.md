@@ -121,6 +121,9 @@ your Netlify address (e.g. `kava-hub-mandarin.netlify.app`) plus any custom doma
 Safari → open the address → Share → **Add to Home Screen**.
 
 ### If something goes wrong
+First open `https://<your-site>.netlify.app/.netlify/functions/hub`. It shows whether the server
+loaded and which settings are present (no secret values are shown).
+
 | What you see | Likely cause |
 |---|---|
 | "Server is missing its Firebase settings" | `FIREBASE_SERVICE_ACCOUNT` is missing. Add it, then redeploy. |

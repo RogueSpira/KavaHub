@@ -212,9 +212,22 @@ function resetIdle() {
 ["pointerdown", "keydown", "touchstart", "wheel"].forEach((ev) => document.addEventListener(ev, resetIdle, { passive: true }));
 
 /* ================= start ================= */
+function connectError(message) {
+  clear(root);
+  root.append(h("main", { class: "pin-screen" }, h("div", { class: "pin-card" },
+    h("img", { class: "pin-logo", src: "icons/logo.png", alt: "Kava & Co. Mandarin" }),
+    h("div", { class: "pin-title" }, "Can't connect to the server"),
+    h("p", { class: "pin-msg", style: { margin: "14px 0" } }, message),
+    h("button", { class: "btn primary big", type: "button", onclick: () => location.reload() }, "Try again"))));
+}
+
 async function start() {
   try { needsSetup = (await api.setupStatus()).needsSetup; }
-  catch (e) { console.warn("[hub] setup check failed", e); }
+  catch (e) {
+    console.warn("[hub] setup check failed", e);
+    connectError(e.message || String(e));
+    return;
+  }
   api.onSession((s) => {
     const was = session;
     session = s;

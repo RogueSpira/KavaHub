@@ -2,13 +2,13 @@
   "name": "kava-hub",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=20" },
+  "engines": { "node": ">=18" },
   "scripts": {
     "test": "node --test test/*.test.js",
     "dev": "netlify dev",
     "rules": "firebase deploy --only firestore:rules"
   },
   "dependencies": {
-    "firebase-admin": "^14.5.0"
+    "firebase-admin": "^13.10.0"
   }
 }

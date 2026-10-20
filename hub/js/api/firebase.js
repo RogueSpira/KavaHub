@@ -27,7 +27,11 @@ async function call(action, data) {
     res = await fetch(API_URL, { method: "POST", headers, body: JSON.stringify({ action, loc, ...data }) });
   } catch { throw new Error("Can't reach the server. Check the Wi-Fi and try again."); }
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.error || "Something went wrong.");
+  if (!res.ok) {
+    if (body.error) throw new Error(body.error);
+    if (res.status === 404) throw new Error("The hub's server function isn't deployed (404). Check that netlify.toml is at the top of the GitHub repo.");
+    throw new Error(`Server error ${res.status}. Check Netlify → Logs → Functions → hub.`);
+  }
   return body;
 }
 const col = (p) => F.collection(db, `locations/${loc}/${p}`);
