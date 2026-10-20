@@ -76,13 +76,12 @@ body.no-ticker #stage { bottom: 0; }
 body[data-theme="orange"] .slide > .bg { filter: hue-rotate(-12deg) saturate(.9); }
 
 /* welcome */
-.welcome { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 4vw; width: 100%; max-width: 92vw; }
+.welcome { display: grid; justify-items: center; width: 100%; max-width: 86vw; }
 .welcome .text { text-align: center; }
 .welcome .big { font-family: var(--groovy); font-size: 12vh; line-height: 1; }
 .tagcard { display: inline-flex; flex-direction: column; gap: .6vh; margin-top: 3vh; padding: 0; background: none; border: 0; }
 .tagcard .l1 { font-family: var(--round); font-weight: 700; font-size: 3vh; letter-spacing: .5vh; text-transform: uppercase; }
 .tagcard .l2 { font-family: var(--round); font-weight: 700; font-size: 3.4vh; letter-spacing: .3vh; color: var(--sun); }
-.welcome .manny-big { height: 54vh; width: auto; filter: drop-shadow(1vh 1vh 0 rgba(0, 0, 0, .45)); }
 .where { margin-top: 3vh; }
 
 /* happy hour */
@@ -204,14 +203,58 @@ body[data-theme="orange"] .slide > .bg { filter: hue-rotate(-12deg) saturate(.9)
 .vote-mini .qr-box { padding: 1vh; box-shadow: .6vh .6vh 0 var(--ink); }
 .vote-mini .qr { width: 13vh; height: 13vh; }
 
-/* Manny peeks in now and then */
-#manny { position: fixed; right: 3vw; bottom: 8.4vh; height: 26vh; z-index: 15; transform: translateY(32vh); pointer-events: none; }
-#manny.peek { animation: peek 6.7s ease-in-out 1; }
-@keyframes peek { 0% { transform: translateY(32vh) rotate(0); } 15% { transform: translateY(4vh) rotate(-6deg); } 25%, 70% { transform: translateY(5vh) rotate(4deg); }
-  80% { transform: translateY(4vh) rotate(-4deg); } 100% { transform: translateY(32vh) rotate(0); } }
-body.no-ticker #manny { bottom: 0; }
+/* Manny peeks in from the sides or pops up from behind the ticker, looks around, and ducks away */
+#manny { position: fixed; height: 24vh; width: auto; z-index: 15; pointer-events: none; opacity: 0; filter: drop-shadow(0 0 1.6vh rgba(255, 207, 58, .35)); }
+#manny.peek-right { opacity: 1; right: 0; top: var(--y); transform-origin: 50% 50%; animation: peekR 8s ease-in-out both; }
+#manny.peek-left { opacity: 1; left: 0; top: var(--y); transform-origin: 50% 50%; animation: peekL 8s ease-in-out both; }
+#manny.peek-bottom { opacity: 1; left: var(--x); bottom: 0; transform-origin: 50% 100%; animation: peekB 8s ease-in-out both; }
+@keyframes peekR {
+  0% { transform: translateX(105%) rotate(-28deg); } 14% { transform: translateX(30%) rotate(-28deg); }
+  26% { transform: translateX(28%) rotate(-18deg) translateY(-1.5vh); } 38% { transform: translateX(33%) rotate(-32deg) translateY(1vh); }
+  52% { transform: translateX(24%) rotate(-20deg) translateY(-2vh); } 66% { transform: translateX(29%) rotate(-30deg); }
+  80% { transform: translateX(31%) rotate(-24deg) translateY(-1vh); } 100% { transform: translateX(105%) rotate(-28deg); } }
+@keyframes peekL {
+  0% { transform: translateX(-105%) rotate(28deg) scaleX(-1); } 14% { transform: translateX(-30%) rotate(28deg) scaleX(-1); }
+  26% { transform: translateX(-28%) rotate(18deg) translateY(-1.5vh) scaleX(-1); } 38% { transform: translateX(-33%) rotate(32deg) translateY(1vh) scaleX(-1); }
+  52% { transform: translateX(-24%) rotate(20deg) translateY(-2vh) scaleX(-1); } 66% { transform: translateX(-29%) rotate(30deg) scaleX(-1); }
+  80% { transform: translateX(-31%) rotate(24deg) translateY(-1vh) scaleX(-1); } 100% { transform: translateX(-105%) rotate(28deg) scaleX(-1); } }
+@keyframes peekB {
+  0% { transform: translateY(105%); } 14% { transform: translateY(2%) rotate(-5deg); } 26% { transform: translateY(6%) rotate(6deg); }
+  40% { transform: translateY(0%) rotate(-7deg) translateX(1.5vw); } 55% { transform: translateY(4%) rotate(5deg) translateX(-1vw); }
+  70% { transform: translateY(1%) rotate(-4deg); } 82% { transform: translateY(8%) rotate(3deg); } 100% { transform: translateY(105%); } }
 
 #empty { position: fixed; inset: 0; display: grid; place-items: center; z-index: 5; font-family: var(--round); font-weight: 700; font-size: 3vh; color: var(--muted); text-align: center; }
 #hint { position: fixed; left: 1vw; bottom: 9.4vh; z-index: 30; font-family: var(--round); font-weight: 700; font-size: 1.8vh; padding: .6vh 1.4vh; background: var(--cream); color: var(--ink); border: .3vh solid var(--ink); border-radius: 999px; opacity: 0; transition: opacity .3s; }
 #hint.show { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { *, *::before { animation: none !important; transition: none !important; } }
+
+/* ---------- Closing kavatender in blue ---------- */
+:root { --blue: #3AA8FF; }
+.crew-card.closing .chip { background: var(--blue); color: var(--ink); }
+.crew-card.closing .frame { box-shadow: 1vh 1vh 0 var(--blue), 1.5vh 1.5vh 0 var(--ink), 0 0 4vh rgba(58, 168, 255, .55); }
+
+/* ---------- Glow ----------
+   Static glows (drawn once per slide, nothing animates them) so they stay light on the TV sticks. */
+:root { --glowRGB: 192, 255, 91; --warmRGB: 255, 207, 58; --hotRGB: 243, 111, 3; }
+body[data-theme="orange"] { --glowRGB: 255, 176, 102; --warmRGB: 255, 207, 58; --hotRGB: 255, 109, 26; }
+#logo { filter: drop-shadow(0 0 1.4vh rgba(69, 219, 224, .5)) drop-shadow(0 .6vh 1.2vh rgba(0, 0, 0, .5)); }
+.retro { text-shadow: .55vh .55vh 0 var(--orange), 0 0 3.2vh rgba(var(--glowRGB), .45), 0 0 1.2vh rgba(var(--glowRGB), .3); }
+.kicker { text-shadow: 0 0 1.6vh rgba(var(--glowRGB), .75); }
+.card { box-shadow: 0 0 2.4vh rgba(var(--glowRGB), .16), inset 0 0 2vh rgba(var(--glowRGB), .05); }
+.hh .time, .spot .ev-when, .tagcard .l2, .bar-row .bh .pct, #ticker .track b { text-shadow: 0 0 1.6vh rgba(var(--warmRGB), .6); }
+.hh.now { box-shadow: 0 0 4vh rgba(var(--hotRGB), .6); }
+.hh .when, .mi .n, .lrow .side { text-shadow: 0 0 1.4vh rgba(var(--hotRGB), .5); }
+.frame { box-shadow: 1vh 1vh 0 var(--orange), 1.5vh 1.5vh 0 var(--ink), 0 0 4vh rgba(var(--hotRGB), .5); }
+.chip { box-shadow: 0 0 1.6vh rgba(var(--warmRGB), .45); }
+.chip.orange { box-shadow: 0 0 1.6vh rgba(var(--hotRGB), .6); }
+.tonight { box-shadow: .7vh .7vh 0 var(--ink), 0 0 3.4vh rgba(var(--hotRGB), .8); }
+.qr-box { box-shadow: 1vh 1vh 0 var(--orange), 1.5vh 1.5vh 0 var(--ink), 0 0 4.5vh rgba(var(--glowRGB), .45); }
+.spot .flyer, .prod .pics img { box-shadow: 1vh 1vh 0 var(--orange), 1.5vh 1.5vh 0 var(--ink), 0 0 4vh rgba(var(--hotRGB), .45); }
+.date-tile { box-shadow: 0 0 2vh rgba(var(--hotRGB), .45); }
+.cal-cell.has { box-shadow: 0 0 1.4vh rgba(var(--hotRGB), .35); }
+.cal-cell.today { box-shadow: 0 0 2.2vh rgba(var(--hotRGB), .8); }
+.bar-fill { box-shadow: 0 0 2vh rgba(var(--hotRGB), .6); }
+.bar-row.win .bar-fill { box-shadow: 0 0 2.4vh rgba(var(--warmRGB), .8); }
+.dots i.on { box-shadow: 0 0 1.4vh rgba(var(--warmRGB), .85); }
+.pill { box-shadow: 0 0 1.8vh rgba(var(--glowRGB), .2); }
+#ticker { box-shadow: 0 -.3vh 2.2vh rgba(var(--glowRGB), .28); }

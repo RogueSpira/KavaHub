@@ -88,8 +88,7 @@ const BUILD = {
           w.eyebrow ? h("div", { class: "kicker in" }, w.eyebrow) : null,
           h("div", { class: "big retro in d1" }, w.headline || "Come hang out with us."),
           h("div", {}, h("div", { class: "card tagcard in d2" }, h("span", { class: "l2" }, TAGLINE))),
-          w.sub ? h("div", { class: "sub in d3" }, w.sub) : null),
-        h("img", { class: "manny-big pop", src: "assets/manny.png", alt: "" })));
+          w.sub ? h("div", { class: "sub in d3" }, w.sub) : null)));
   },
 
   happyhour() {
@@ -115,14 +114,14 @@ const BUILD = {
   crew() {
     const c = crewFor(tv.crew);
     const cards = [];
-    const card = (p, chip, cls, d) => h("div", { class: `crew-card in d${d}` },
+    const card = (p, chip, cls, d) => h("div", { class: `crew-card ${cls} in d${d}` },
       h("span", { class: `chip ${cls}` }, chip),
       h("div", { class: "frame" }, img(p.photo, "", p.name) || h("div", { class: "initial" }, (p.name || "?")[0].toUpperCase())),
       h("div", { class: "crew-name retro" }, p.name));
     if (c.opener && c.closer && c.opener.id === c.closer.id) cards.push(card(c.opener, "☀️ All Day 🌙", "", 1));
     else {
       if (c.opener) cards.push(card(c.opener, "☀️ Opening", "", 1));
-      if (c.closer) cards.push(card(c.closer, "🌙 Closing", "orange", 2));
+      if (c.closer) cards.push(card(c.closer, "🌙 Closing", "closing", 2));
     }
     if (!cards.length) return null;
     return h("section", {}, h("div", { class: "kicker in" }, "Say hi to"), h("div", { class: "title sm retro in" }, "Your Kavatenders Today"), h("div", { class: "crew" }, cards));
@@ -512,10 +511,19 @@ addEventListener("keydown", (e) => {
   e.preventDefault();
 });
 
-/* ---------------- Manny peeks in every few minutes ---------------- */
+/* ---------------- Manny peeks in from a different edge every so often ---------------- */
 const manny = $("manny");
-manny.addEventListener("animationend", () => manny.classList.remove("peek"));
-setInterval(() => { if (!document.hidden) manny.classList.add("peek"); }, 150e3);
+manny.addEventListener("animationend", () => { manny.className = ""; });
+const rand = (a, b) => a + Math.random() * (b - a);
+function peek() {
+  if (document.hidden || manny.className) return;
+  const side = ["left", "right", "bottom", "right", "left"][Math.floor(Math.random() * 5)];
+  manny.style.setProperty("--y", `${rand(18, 52)}vh`);
+  manny.style.setProperty("--x", `${rand(8, 78)}vw`);
+  manny.className = `peek-${side}`;
+}
+setTimeout(peek, 20e3);
+setInterval(peek, 75e3);
 
 /* ---------------- start ---------------- */
 tick(); setInterval(tick, 15e3);
