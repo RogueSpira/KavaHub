@@ -86,13 +86,11 @@ KavaVote.
 1. Netlify → **Add new site → Import an existing project** → GitHub → pick the repo.
    - The settings come from `netlify.toml`, so leave build settings as they are.
 2. Before (or right after) the first deploy, go to **Site configuration → Environment
-   variables** and add these five:
+   variables** and add these three:
 
    | Key | Value |
    |---|---|
-   | `FIREBASE_PROJECT_ID` | `project_id` from the key file |
-   | `FIREBASE_CLIENT_EMAIL` | `client_email` from the key file |
-   | `FIREBASE_PRIVATE_KEY` | `private_key` from the key file. Copy everything between the quotes, starting `-----BEGIN PRIVATE KEY-----\n` and ending `-----END PRIVATE KEY-----\n`, with the `\n`s left in |
+   | `FIREBASE_SERVICE_ACCOUNT` | the **entire** service-account key file: open it in a text editor, select all, copy, paste |
    | `PIN_PEPPER` | a long random string; make one with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
    | `SETUP_CODE` | any phrase; you type it once on the setup screen |
 
@@ -125,8 +123,9 @@ Safari → open the address → Share → **Add to Home Screen**.
 ### If something goes wrong
 | What you see | Likely cause |
 |---|---|
-| "Server is missing its Firebase settings" | One of the three `FIREBASE_` variables is missing. Add it, then redeploy. |
-| "Something went wrong on the server" | Usually `FIREBASE_PRIVATE_KEY` was pasted wrong. Check Netlify → Logs → Functions → `hub`. |
+| "Server is missing its Firebase settings" | `FIREBASE_SERVICE_ACCOUNT` is missing. Add it, then redeploy. |
+| "…isn't a valid key file" | Only part of the key file was pasted. Paste the whole file again and redeploy. |
+| "Something went wrong on the server" | Check Netlify → Logs → Functions → `hub`. |
 | Setup code "isn't right" | The code you typed doesn't match `SETUP_CODE`. Variable changes need a redeploy. |
 | PIN works but the screen goes straight back to the PIN pad | The rules from step 5 aren't published, so the hub can't read your account. |
 | Yellow "Demo mode" bar | `firebaseConfig` in `config.js` is still `null`. |
