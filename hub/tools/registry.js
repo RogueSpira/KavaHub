@@ -8,10 +8,9 @@
 //      until you give a role (or a person) access.
 import tv from "./tv/manifest.js";
 import checklists from "./checklists/manifest.js";
-import inventory from "./inventory/manifest.js";
 import suggestions from "./suggestions/manifest.js";
-import complaints from "./complaints/manifest.js";
 import admin from "./admin/manifest.js";
 
-export const TOOLS = [tv, checklists, inventory, suggestions, complaints, admin];
+// Shelved for now (folders kept): ./inventory, ./complaints
+export const TOOLS = [tv, checklists, suggestions, admin];
 export const toolById = (id) => TOOLS.find((t) => t.id === id);

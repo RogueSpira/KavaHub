@@ -81,12 +81,30 @@ service cloud.firestore {
 
       // ---- Tool data ----
       // Each tool keeps its data under locations/{loc}/tools-data/{toolId}/...
-      // and adds its own match block here when it's built, e.g.:
-      //
-      // match /tools-data/checklists/{path=**} {
-      //   allow read:  if can(loc, 'checklists', 1);
-      //   allow write: if can(loc, 'checklists', 1);
-      // }
+      // and adds its own match block here when it's built.
+
+      // Suggestion Box: everyone with Use sees the board and posts under their own name.
+      // Manage sets status / replies and can remove anything. Authors can delete their own
+      // post while it's still "new".
+      match /tools-data/suggestions/items/{id} {
+        allow read: if can(loc, 'suggestions', 1);
+        allow create: if can(loc, 'suggestions', 1)
+          && request.resource.data.keys().hasOnly(['text', 'authorUid', 'authorName', 'createdAt', 'status'])
+          && request.resource.data.authorUid == request.auth.uid
+          && request.resource.data.authorName == me(loc).name
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.status == 'new'
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 1000;
+        allow update: if can(loc, 'suggestions', 2)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'response', 'respondedBy', 'respondedAt'])
+          && request.resource.data.status in ['new', 'reviewing', 'planned', 'done', 'declined']
+          && request.resource.data.response is string && request.resource.data.response.size() <= 1000
+          && request.resource.data.respondedBy == me(loc).name
+          && request.resource.data.respondedAt == request.time;
+        allow delete: if can(loc, 'suggestions', 2)
+          || (can(loc, 'suggestions', 1) && resource.data.authorUid == request.auth.uid && resource.data.status == 'new');
+      }
     }
 
     // pinIndex and anything not listed above: server only.

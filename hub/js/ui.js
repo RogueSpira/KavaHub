@@ -76,8 +76,11 @@ export async function confirm(title, message, okLabel = "Yes", kind = "danger") 
 }
 
 /* ---------- form bits ---------- */
+// Only real form inputs are wrapped in a <label>. Wrapping buttons (like a segmented
+// control) in a label makes every tap also "click" the first button, so those use a <div>.
 export function field(label, input, hint) {
-  return h("label", { class: "field" }, h("span", { class: "field-label" }, label), input,
+  const isInput = input instanceof HTMLElement && /^(INPUT|SELECT|TEXTAREA)$/.test(input.tagName);
+  return h(isInput ? "label" : "div", { class: "field" }, h("span", { class: "field-label" }, label), input,
     hint ? h("span", { class: "field-hint" }, hint) : null);
 }
 

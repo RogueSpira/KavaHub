@@ -184,3 +184,29 @@ export async function saveSettings(settings) { await wait(80); if (me()?.roleId 
 /* ---------- activity ---------- */
 export function watchActivity(cb) { return watch(() => cb(structuredClone(store.activity.slice(0, 150)))); }
 export async function log(_session, tool, action, detail = "") { addActivity(tool, action, detail); }
+
+/* ---------- Suggestion Box ---------- */
+const sugg = fresh ? [] : [
+  { id: id("s"), text: "Could we get a second blender for the smoothie rush on weekends?", authorUid: null, authorName: "Daniel", createdAt: new Date(Date.now() - 3 * 864e5), status: "planned", response: "Yes — ordering one this week.", respondedBy: "Rogue", respondedAt: new Date(Date.now() - 2 * 864e5) },
+  { id: id("s"), text: "Board game night on Tuesdays? Slow night, could bring people in.", authorUid: null, authorName: "Wheatyn", createdAt: new Date(Date.now() - 864e5), status: "new" },
+];
+function suggAuthorFix() { for (const s of sugg) if (!s.authorUid) s.authorUid = Object.values(store.users).find((u) => u.name === s.authorName)?.uid; }
+suggAuthorFix();
+export function watchSuggestions(cb) { return watch(() => cb(structuredClone(sugg))); }
+export async function addSuggestion(session, text) {
+  await wait(150);
+  sugg.unshift({ id: id("s"), text, authorUid: session.uid, authorName: session.me.name, createdAt: now(), status: "new" });
+  changed();
+}
+export async function respondSuggestion(session, sid, { status, response }) {
+  await wait(150);
+  const s = sugg.find((x) => x.id === sid);
+  Object.assign(s, { status, response, respondedBy: session.me.name, respondedAt: now() });
+  changed();
+}
+export async function deleteSuggestion(sid) {
+  await wait(120);
+  const i = sugg.findIndex((x) => x.id === sid);
+  if (i >= 0) sugg.splice(i, 1);
+  changed();
+}

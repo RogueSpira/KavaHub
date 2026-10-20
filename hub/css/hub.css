@@ -246,3 +246,31 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .toast.out { opacity: 0; transform: translateY(8px); }
 
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* ---------- cards & text areas (shared by tools) ---------- */
+.card { background: rgba(18, 48, 53, .72); border: 1.5px solid var(--line); border-radius: var(--r); padding: 16px 18px; }
+.textarea { min-height: 96px; padding: 12px 14px; line-height: 1.45; resize: vertical; }
+.btn.small { min-height: 38px; padding: 0 14px; font-size: 14.5px; }
+.avatar.sm { width: 34px; height: 34px; font-size: 15px; }
+.sub-h { font-family: var(--f-label); font-size: 20px; }
+.empty { padding: 30px 0; text-align: center; }
+
+/* ---------- Suggestion Box ---------- */
+.composer { display: grid; gap: 10px; margin-bottom: 26px; border-color: color-mix(in srgb, var(--gold) 40%, transparent); }
+.composer-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.sugg-head { margin-bottom: 12px; }
+.sugg-list { display: grid; gap: 12px; }
+.sugg-top { display: flex; align-items: center; gap: 10px; }
+.sugg-who { flex: 1; min-width: 0; }
+.sugg-status { margin: 0; }
+.sugg-text { margin: 10px 0 0; font-size: 17.5px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.sugg-resp { margin-top: 12px; padding: 10px 14px; border-left: 4px solid var(--lime); background: rgba(182, 242, 74, .08); border-radius: 0 var(--r-sm) var(--r-sm) 0; }
+.sugg-resp p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.sugg-resp-who { font-family: var(--f-label); font-weight: 600; font-size: 13.5px; color: var(--lime); }
+.sugg-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.sugg-quote { padding: 10px 14px; border-left: 4px solid var(--gold); background: rgba(255, 207, 58, .08); border-radius: 0 var(--r-sm) var(--r-sm) 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.st-new { background: rgba(69, 219, 224, .16); color: var(--aqua); }
+.st-reviewing { background: rgba(255, 207, 58, .16); color: var(--gold); }
+.st-planned { background: rgba(154, 92, 255, .2); color: #C4A3FF; }
+.st-done { background: rgba(182, 242, 74, .16); color: var(--lime); }
+.st-declined { background: rgba(147, 169, 163, .16); color: var(--muted); }

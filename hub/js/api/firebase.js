@@ -103,3 +103,18 @@ export async function log(session, tool, action, detail = "") {
     });
   } catch (e) { console.warn("[hub] activity log failed", e); }
 }
+
+/* ---------- Suggestion Box ---------- */
+const suggCol = () => col("tools-data/suggestions/items");
+export function watchSuggestions(cb) {
+  return F.onSnapshot(F.query(suggCol(), F.orderBy("createdAt", "desc"), F.limit(300)),
+    (q) => cb(q.docs.map((d) => { const x = d.data(); return { id: d.id, ...x, createdAt: x.createdAt?.toDate?.() || null, respondedAt: x.respondedAt?.toDate?.() || null }; })),
+    (e) => { console.warn("[hub] suggestions listener", e); cb(null, e); });
+}
+export const addSuggestion = (session, text) => F.addDoc(suggCol(), {
+  text, authorUid: session.uid, authorName: session.me.name, createdAt: F.serverTimestamp(), status: "new",
+});
+export const respondSuggestion = (session, id, { status, response }) => F.updateDoc(F.doc(suggCol(), id), {
+  status, response, respondedBy: session.me.name, respondedAt: F.serverTimestamp(),
+});
+export const deleteSuggestion = (id) => F.deleteDoc(F.doc(suggCol(), id));
