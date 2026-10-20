@@ -1,0 +1,97 @@
+rules_version = '2';
+
+// Kava Hub security rules.
+// - Every signed-in session carries a `loc` claim (set by the pinLogin function).
+// - A person's access is read live from their user doc + role doc, so changing
+//   someone's role, access, or deactivating them takes effect immediately.
+// - Access levels per tool: 0 hidden, 1 use, 2 manage. Owner = everything.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function userPath(loc) {
+      return /databases/$(database)/documents/locations/$(loc)/users/$(request.auth.uid);
+    }
+    function me(loc) { return get(userPath(loc)).data; }
+
+    function member(loc) {
+      return request.auth != null
+        && request.auth.token.loc == loc
+        && exists(userPath(loc))
+        && me(loc).active == true;
+    }
+
+    function isOwner(loc) { return member(loc) && me(loc).roleId == 'owner'; }
+
+    function level(loc, tool) {
+      let u = me(loc);
+      let role = get(/databases/$(database)/documents/locations/$(loc)/roles/$(u.roleId)).data;
+      let ov = u.get('overrides', {});
+      return u.roleId == 'owner' ? 2
+        : (ov.keys().hasAny([tool]) ? ov[tool] : role.get('perms', {}).get(tool, 0));
+    }
+
+    function can(loc, tool, lvl) { return member(loc) && level(loc, tool) >= lvl; }
+
+    match /locations/{loc} {
+      allow read: if member(loc);
+      allow update: if isOwner(loc)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'settings']);
+      allow create, delete: if false;
+
+      // People: you can read yourself; admins can read everyone. Changes go through functions.
+      match /users/{uid} {
+        allow read: if member(loc) && (uid == request.auth.uid || can(loc, 'admin', 2));
+        allow write: if false;
+      }
+
+      // Roles: everyone signed in can read (the app needs them to work out access).
+      // Only an Owner edits a role's name and access grid. Create/delete go through functions.
+      match /roles/{roleId} {
+        allow read: if member(loc);
+        allow update: if isOwner(loc) && roleId != 'owner'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'perms'])
+          && request.resource.data.name is string
+          && request.resource.data.perms is map;
+        allow create, delete: if false;
+      }
+
+      // Tile settings (on/off + order).
+      match /tools/{toolId} {
+        allow read: if member(loc);
+        allow create, update: if can(loc, 'admin', 2)
+          && request.resource.data.keys().hasOnly(['enabled', 'order'])
+          && request.resource.data.enabled is bool
+          && request.resource.data.order is int;
+        allow delete: if false;
+      }
+
+      // Activity log: anyone signed in can add an entry as themselves; only admins read it.
+      match /activity/{id} {
+        allow read: if can(loc, 'admin', 2);
+        allow create: if member(loc)
+          && request.resource.data.keys().hasOnly(['at', 'actorUid', 'actorName', 'tool', 'action', 'detail'])
+          && request.resource.data.actorUid == request.auth.uid
+          && request.resource.data.actorName == me(loc).name
+          && request.resource.data.at == request.time
+          && request.resource.data.tool is string && request.resource.data.tool.size() <= 40
+          && request.resource.data.action is string && request.resource.data.action.size() <= 80
+          && request.resource.data.detail is string && request.resource.data.detail.size() <= 300;
+        allow update, delete: if false;
+      }
+
+      // ---- Tool data ----
+      // Each tool keeps its data under locations/{loc}/tools-data/{toolId}/...
+      // and adds its own match block here when it's built, e.g.:
+      //
+      // match /tools-data/checklists/{path=**} {
+      //   allow read:  if can(loc, 'checklists', 1);
+      //   allow write: if can(loc, 'checklists', 1);
+      // }
+    }
+
+    // pinIndex and anything not listed above: server only.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
