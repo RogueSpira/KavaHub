@@ -106,6 +106,27 @@ service cloud.firestore {
           || (can(loc, 'suggestions', 1) && resource.data.authorUid == request.auth.uid && resource.data.status == 'new');
       }
 
+      // Knowledge Bank: Use reads; Manage writes, edits and deletes.
+      match /tools-data/knowledge/articles/{id} {
+        function validArticle(d) {
+          return d.title is string && d.title.size() > 0 && d.title.size() <= 120
+            && d.category is string && d.category.size() <= 40
+            && d.body is string && d.body.size() > 0 && d.body.size() <= 20000
+            && d.updatedAt == request.time
+            && d.updatedBy == me(loc).name;
+        }
+        allow read: if can(loc, 'knowledge', 1);
+        allow create: if can(loc, 'knowledge', 2)
+          && request.resource.data.keys().hasOnly(['title', 'category', 'body', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'])
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.createdBy == me(loc).name
+          && validArticle(request.resource.data);
+        allow update: if can(loc, 'knowledge', 2)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'category', 'body', 'updatedAt', 'updatedBy'])
+          && validArticle(request.resource.data);
+        allow delete: if can(loc, 'knowledge', 2);
+      }
+
       // Opening & Closing checklists.
       // The three lists (opening / shift / closing): everyone with Use reads them; Manage edits.
       match /tools-data/checklists/lists/{listId} {

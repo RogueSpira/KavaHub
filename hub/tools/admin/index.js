@@ -103,7 +103,16 @@ export function mount(el, ctx) {
     role.addEventListener("change", paintAccess);
     paintAccess();
 
-    const pinBtn = h("button", { class: "btn", type: "button", onclick: () => resetPinFor(u) }, "Reset PIN");
+    const pinShown = h("span", { class: "pin-shown", "aria-live": "polite" });
+    const showBtn = h("button", { class: "btn", type: "button", onclick: async () => {
+      if (pinShown.textContent) { pinShown.textContent = ""; showBtn.textContent = "Show PIN"; return; }
+      showBtn.disabled = true;
+      try { pinShown.textContent = await api.revealPin(u.uid); showBtn.textContent = "Hide"; }
+      catch (e) { toast(e.message, "err"); }
+      showBtn.disabled = false;
+    } }, "Show PIN");
+    const pinBtn = h("div", { class: "pin-actions" }, showBtn, pinShown,
+      h("button", { class: "btn", type: "button", onclick: () => resetPinFor(u) }, "Reset PIN"));
     const body = h("div", { class: "form" },
       field("Name", name), field("Role", role),
       field("Status", activeSeg, self ? "You can't deactivate yourself." : "Inactive people can't sign in. Their history is kept."),

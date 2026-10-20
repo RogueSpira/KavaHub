@@ -9,8 +9,9 @@
 import tv from "./tv/manifest.js";
 import checklists from "./checklists/manifest.js";
 import suggestions from "./suggestions/manifest.js";
+import knowledge from "./knowledge/manifest.js";
 import admin from "./admin/manifest.js";
 
 // Shelved for now (folders kept): ./inventory, ./complaints
-export const TOOLS = [tv, checklists, suggestions, admin];
+export const TOOLS = [tv, checklists, knowledge, suggestions, admin];
 export const toolById = (id) => TOOLS.find((t) => t.id === id);

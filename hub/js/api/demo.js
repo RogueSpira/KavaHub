@@ -14,13 +14,13 @@ const id = (p) => `${p}-${(seq++).toString(36)}`;
 
 const ROLES = {
   owner: { id: "owner", name: "Owner", rank: 100, system: true, perms: {} },
-  manager: { id: "manager", name: "Manager", rank: 50, system: false, perms: { tv: 2, checklists: 2, inventory: 2, suggestions: 2, complaints: 2, admin: 0 } },
-  kavatender: { id: "kavatender", name: "Kavatender", rank: 10, system: false, perms: { tv: 1, checklists: 1, inventory: 1, suggestions: 1, complaints: 1, admin: 0 } },
+  manager: { id: "manager", name: "Manager", rank: 50, system: false, perms: { tv: 2, checklists: 2, knowledge: 2, suggestions: 2, admin: 0 } },
+  kavatender: { id: "kavatender", name: "Kavatender", rank: 10, system: false, perms: { tv: 1, checklists: 1, knowledge: 1, suggestions: 1, admin: 0 } },
 };
 const store = {
   location: fresh ? null : { id: LOCATION_ID, name: "Kava & Co. Mandarin", setupDone: true, settings: { autoLockSeconds: 120 } },
   roles: fresh ? {} : structuredClone(ROLES),
-  tools: fresh ? {} : Object.fromEntries(["tv", "checklists", "inventory", "suggestions", "complaints", "admin"].map((t, i) => [t, { enabled: true, order: i }])),
+  tools: fresh ? {} : Object.fromEntries(["tv", "checklists", "knowledge", "suggestions", "admin"].map((t, i) => [t, { enabled: true, order: i }])),
   users: {},
   pins: {}, // pin -> uid  (demo only; the real backend never stores PINs)
   activity: [],
@@ -83,7 +83,7 @@ export async function setupOwner({ setupCode, name, pin }) {
   checkPin(pin);
   store.location = { id: LOCATION_ID, name: "Kava & Co. Mandarin", setupDone: true, settings: { autoLockSeconds: 120 } };
   store.roles = structuredClone(ROLES);
-  store.tools = Object.fromEntries(["tv", "checklists", "inventory", "suggestions", "complaints", "admin"].map((t, i) => [t, { enabled: true, order: i }]));
+  store.tools = Object.fromEntries(["tv", "checklists", "knowledge", "suggestions", "admin"].map((t, i) => [t, { enabled: true, order: i }]));
   currentUid = addUser(cleanName(name), "owner", pin);
   addActivity("admin", "Set up location", `Owner: ${name}`);
 }
@@ -149,6 +149,18 @@ export async function resetPin(uid, pin) {
   for (const [p, u] of Object.entries(store.pins)) if (u === uid) delete store.pins[p];
   store.pins[pin] = uid;
   addActivity("admin", "Reset PIN", store.users[uid].name);
+}
+
+export async function revealPin(uid) {
+  await wait(200);
+  const c = requireAdmin();
+  const t = store.users[uid];
+  if (!t) throw new Error("That person wasn't found.");
+  if (!c.isOwner && rankOf(t.roleId) >= c.rank && uid !== currentUid) throw new Error("You can't view the PIN of someone at or above your role.");
+  const pin = Object.entries(store.pins).find(([, u]) => u === uid)?.[0];
+  if (!pin) throw new Error("No PIN on file for this person. Use Reset PIN to set one.");
+  addActivity("admin", "Viewed PIN", t.name);
+  return pin;
 }
 
 /* ---------- roles ---------- */
@@ -258,3 +270,18 @@ export async function setChecklistItem(session, { dateKey, dayStart, listId, lis
 export function watchChecklistHistory(since, cb) {
   return watch(() => cb(structuredClone(Object.values(clDays).filter((r) => r.dayStart >= since).sort((a, b) => b.dayStart - a.dayStart))));
 }
+
+/* ---------- Knowledge Bank ---------- */
+const kb = fresh ? [] : [
+  { title: "Making a kava batch (sample)", category: "How-To", body: "## What you need\n- 1 strainer bag\n- Warm water (not hot)\n- Kava root powder\n\n## Steps\n1. Measure the powder into the strainer bag.\n2. Add warm water to the bucket.\n3. Knead the bag for **10 minutes**, squeezing firmly.\n4. Wring out the bag and discard the pulp.\n\n**Tip:** label the batch with the time it was made." },
+  { title: "Mango Tango (sample)", category: "Recipes", body: "## Ingredients\n- 8 oz kava\n- 2 oz mango juice\n- Splash of lime\n\n## Build\n1. Fill a shell with ice.\n2. Add kava, then mango juice.\n3. Top with lime and stir.\n\nServe with a lime wheel." },
+  { title: "What is kava? (sample)", category: "Knowledge", body: "Kava is a drink made from the root of the *Piper methysticum* plant, traditional across the Pacific Islands.\n\nMore background: https://en.wikipedia.org/wiki/Kava" },
+].map((a, i) => ({ id: `kb${i}`, ...a, createdBy: "Rogue", updatedBy: "Rogue", createdAt: new Date(Date.now() - (5 - i) * 864e5), updatedAt: new Date(Date.now() - (5 - i) * 864e5) }));
+export function watchArticles(cb) { return watch(() => cb(structuredClone([...kb].sort((a, b) => a.title.localeCompare(b.title))))); }
+export async function saveArticle(session, aid, { title, category, body }) {
+  await wait(150);
+  if (aid) { Object.assign(kb.find((a) => a.id === aid), { title, category, body, updatedAt: now(), updatedBy: session.me.name }); changed(); return aid; }
+  const a = { id: id("kb"), title, category, body, createdAt: now(), createdBy: session.me.name, updatedAt: now(), updatedBy: session.me.name };
+  kb.push(a); changed(); return a.id;
+}
+export async function deleteArticle(aid) { await wait(100); const i = kb.findIndex((a) => a.id === aid); if (i >= 0) kb.splice(i, 1); changed(); }

@@ -80,6 +80,7 @@ export function watchUsers(cb) {
 export const createUser = (d) => call("adminCreateUser", d);
 export const updateUser = (uid, patch) => call("adminUpdateUser", { uid, ...patch });
 export const resetPin = (uid, pin) => call("adminResetPin", { uid, pin });
+export const revealPin = async (uid) => (await call("adminRevealPin", { uid })).pin;
 
 /* ---------- roles ---------- */
 export const saveRole = (roleId, { name, perms }) => F.updateDoc(docRef(`roles/${roleId}`), { name, perms });
@@ -162,3 +163,24 @@ export function watchChecklistHistory(since, cb) {
     (q) => cb(q.docs.map(dayDoc)),
     (e) => { console.warn("[hub] checklist history", e); cb(null, e); });
 }
+
+/* ---------- Knowledge Bank ---------- */
+const kbCol = () => col("tools-data/knowledge/articles");
+const kbDoc = (d) => { const x = d.data(); return { id: d.id, ...x, createdAt: tsToDate(x.createdAt), updatedAt: tsToDate(x.updatedAt) }; };
+export function watchArticles(cb) {
+  return F.onSnapshot(F.query(kbCol(), F.orderBy("title"), F.limit(1000)),
+    (q) => cb(q.docs.map(kbDoc)),
+    (e) => { console.warn("[hub] knowledge", e); cb(null, e); });
+}
+export async function saveArticle(session, id, { title, category, body }) {
+  const by = session.me.name;
+  if (id) {
+    await F.updateDoc(F.doc(kbCol(), id), { title, category, body, updatedAt: F.serverTimestamp(), updatedBy: by });
+    return id;
+  }
+  const ref = await F.addDoc(kbCol(), {
+    title, category, body, createdAt: F.serverTimestamp(), createdBy: by, updatedAt: F.serverTimestamp(), updatedBy: by,
+  });
+  return ref.id;
+}
+export const deleteArticle = (id) => F.deleteDoc(F.doc(kbCol(), id));

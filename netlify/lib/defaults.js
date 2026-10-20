@@ -3,7 +3,7 @@
 export const LEVEL = { HIDDEN: 0, USE: 1, MANAGE: 2 };
 
 // Tool ids must match the `id` in each hub/tools/<id>/manifest.js.
-export const TOOL_IDS = ["tv", "checklists", "inventory", "suggestions", "complaints", "admin"];
+export const TOOL_IDS = ["tv", "checklists", "knowledge", "suggestions", "admin"];
 
 export const DEFAULT_ROLES = {
   owner: {
@@ -16,13 +16,13 @@ export const DEFAULT_ROLES = {
     name: "Manager",
     rank: 50,
     system: false,
-    perms: { tv: 2, checklists: 2, inventory: 2, suggestions: 2, complaints: 2, admin: 0 },
+    perms: { tv: 2, checklists: 2, knowledge: 2, suggestions: 2, admin: 0 },
   },
   kavatender: {
     name: "Kavatender",
     rank: 10,
     system: false,
-    perms: { tv: 1, checklists: 1, inventory: 1, suggestions: 1, complaints: 1, admin: 0 },
+    perms: { tv: 1, checklists: 1, knowledge: 1, suggestions: 1, admin: 0 },
   },
 };
 

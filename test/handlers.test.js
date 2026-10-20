@@ -164,3 +164,27 @@ test("unknown actions and bad input are refused cleanly", async () => {
   await rejects(t.api("adminUpdateUser", { uid: "../../pinIndex/x", name: "x" }, t.owner), 404);
   await rejects(t.api("adminUpdateUser", { uid: JSON.parse(t.owner).uid, overrides: { tv: 7 } }, t.owner), 400);
 });
+
+test("show PIN: admins see PINs (incl. after reset), rank rules apply, viewing is logged", async () => {
+  const t = await bootstrapped();
+  const { uid: danUid } = await t.api("adminCreateUser", { name: "Daniel", roleId: "kavatender", pin: "1357" }, t.owner);
+  assert.equal((await t.api("adminRevealPin", { uid: danUid }, t.owner)).pin, "1357");
+  await t.api("adminResetPin", { uid: danUid, pin: "0482" }, t.owner);
+  assert.equal((await t.api("adminRevealPin", { uid: danUid }, t.owner)).pin, "0482");
+  const ownerUid = JSON.parse(t.owner).uid;
+  assert.equal((await t.api("adminRevealPin", { uid: ownerUid }, t.owner)).pin, "2580");
+
+  const { uid: joshUid } = await t.api("adminCreateUser", { name: "Josh", roleId: "manager", pin: "3690" }, t.owner);
+  await t.api("adminUpdateUser", { uid: joshUid, overrides: { admin: 2 } }, t.owner);
+  const josh = (await t.api("pinLogin", { pin: "3690" })).token;
+  assert.equal((await t.api("adminRevealPin", { uid: danUid }, josh)).pin, "0482");
+  assert.equal((await t.api("adminRevealPin", { uid: joshUid }, josh)).pin, "3690");
+  await rejects(t.api("adminRevealPin", { uid: ownerUid }, josh), 403);
+
+  const dan = (await t.api("pinLogin", { pin: "0482" })).token;
+  await rejects(t.api("adminRevealPin", { uid: danUid }, dan), 403);
+  await rejects(t.api("adminRevealPin", { uid: danUid }), 401);
+
+  const log = await t.db.collection("locations/mandarin/activity").get();
+  assert.equal(log.docs.filter((d) => d.get("action") === "Viewed PIN").length, 5);
+});

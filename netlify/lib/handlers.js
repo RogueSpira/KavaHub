@@ -222,6 +222,30 @@ export function makeApi({ db, auth, now, env }) {
       return { ok: true };
     },
 
+    // Show someone's PIN to an admin. PINs are only stored as keyed hashes, but with
+    // 10,000 possible 4-digit PINs the server can find the match directly.
+    async adminRevealPin(data, idToken) {
+      const c = await requireAdmin(idToken);
+      const uid = String(data.uid || "");
+      if (!uid.startsWith(`${c.loc}-`)) fail(404, "That person wasn't found.");
+      const snap = await userRef(c.loc, uid).get();
+      if (!snap.exists) fail(404, "That person wasn't found.");
+      const targetRank = await rankOfRole(c.loc, snap.get("roleId"));
+      if (!c.isOwner && targetRank >= c.rank && uid !== c.me.uid) fail(403, "You can't view the PIN of someone at or above your role.");
+      const idx = await db.collection("pinIndex").where("uid", "==", uid).get();
+      const keys = new Set(idx.docs.map((d) => d.id));
+      let pin = null;
+      if (keys.size) {
+        for (let n = 0; n < 10000 && !pin; n++) {
+          const candidate = String(n).padStart(4, "0");
+          if (keys.has(key(c.loc, candidate))) pin = candidate;
+        }
+      }
+      if (!pin) fail(404, "No PIN on file for this person. Use Reset PIN to set one.");
+      await logActivity(c.loc, c.me, "Viewed PIN", snap.get("name"));
+      return { pin };
+    },
+
     async adminCreateRole(data, idToken) {
       const c = await requireAdmin(idToken);
       if (!c.isOwner) fail(403, "Only an Owner can change roles.");
