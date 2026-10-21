@@ -58,8 +58,6 @@ function requireAdmin() {
 function checkPin(pin) {
   const p = String(pin ?? "");
   if (!/^\d{4}$/.test(p)) throw new Error("PIN must be exactly 4 digits.");
-  if (/^(\d)\1+$/.test(p)) throw new Error("PIN can't be all the same digit.");
-  if ("0123456789".includes(p) || "9876543210".includes(p)) throw new Error("PIN can't be a straight run like 1234.");
   return p;
 }
 function cleanName(n) {

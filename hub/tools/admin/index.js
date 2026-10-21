@@ -71,7 +71,7 @@ export function mount(el, ctx) {
       const pin = pinField();
       const ok = await modal({
         title: "Add a person",
-        body: h("div", { class: "form" }, field("Name", name), field("Role", role), field("PIN", pin, "They'll use this to sign in. Avoid 1234-style runs and repeats.")),
+        body: h("div", { class: "form" }, field("Name", name), field("Role", role), field("PIN", pin, "Same as their POS PIN. They'll use it to sign in.")),
         actions: [{ label: "Cancel", kind: "ghost", value: false },
           { label: "Add person", kind: "primary", onClick: () => api.createUser({ name: name.value, roleId: role.value, pin: pin.value }) }],
       });

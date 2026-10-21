@@ -69,8 +69,9 @@ test("a PIN at one location doesn't sign in at another", async () => {
 
 test("create person: PIN rules and uniqueness", async () => {
   const t = await bootstrapped();
-  await rejects(t.api("adminCreateUser", { name: "A", roleId: "kavatender", pin: "1234" }, t.owner), 400, /straight run/);
-  await rejects(t.api("adminCreateUser", { name: "A", roleId: "kavatender", pin: "7777" }, t.owner), 400);
+  await t.api("adminCreateUser", { name: "A", roleId: "kavatender", pin: "1234" }, t.owner); // POS PINs: any 4 digits are fine
+  await rejects(t.api("adminCreateUser", { name: "A", roleId: "kavatender", pin: "777" }, t.owner), 400);   // still has to be 4 digits
+  await t.api("adminCreateUser", { name: "B", roleId: "kavatender", pin: "7777" }, t.owner);
   await rejects(t.api("adminCreateUser", { name: "A", roleId: "kavatender", pin: "2580" }, t.owner), 409, /already in use/);
   await rejects(t.api("adminCreateUser", { name: "", roleId: "kavatender", pin: "3690" }, t.owner), 400);
   await rejects(t.api("adminCreateUser", { name: "A", roleId: "nope", pin: "3690" }, t.owner), 400);
