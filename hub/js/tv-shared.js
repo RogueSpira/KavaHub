@@ -26,6 +26,7 @@ export const SLIDES = [
   { id: "welcome", name: "Welcome", section: "welcome" },
   { id: "happyhour", name: "Happy Hour", section: "happyhour" },
   { id: "crew", name: "Your Kavatenders Today", section: "crew" },
+  { id: "featured", name: "Featured Event (Trivia) + Monthly Theme", section: "events" },
   { id: "tonight", name: "Tonight / Coming Up Next", section: "events" },
   { id: "weekly", name: "Every Week", section: "events" },
   { id: "upnext", name: "Up Next", section: "events" },
@@ -142,6 +143,13 @@ export function repeatLabel(ev) {
   return "";
 }
 export const isRecurring = (ev) => ev?.repeat === "weekly" || ev?.repeat === "monthly";
+// Featured events (like Trivia) get their own slide with a monthly theme and stay off the
+// Tonight / Up Next / Every Week slides so they don't show twice. They still appear on the calendar.
+export const isFeatured = (ev) => !!ev?.featured;
+export const monthKey = (d) => keyOf(d).slice(0, 7); // "2026-10"
+export const themeFor = (ev, date) => (ev?.themes || {})[monthKey(date)] || "";
+// Is this the last time this weekday falls in its month (the "last Thursday")?
+export const isLastOfMonth = (date) => { const n = new Date(date); n.setDate(n.getDate() + 7); return n.getMonth() !== date.getMonth(); };
 
 /* ---------------- happy hour ---------------- */
 const hm = (s) => { const [h, m] = String(s || "0:0").split(":").map(Number); return h * 60 + (m || 0); };

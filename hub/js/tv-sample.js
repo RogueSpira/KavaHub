@@ -1,5 +1,5 @@
 // Sample TV content for demo mode (hub ?demo and board ?demo). Based on the old board's defaults.
-import { keyOf, businessDate, SLIDES } from "./tv-shared.js";
+import { keyOf, businessDate, SLIDES, monthKey } from "./tv-shared.js";
 
 export function sampleTv() {
   const today = businessDate();
@@ -28,7 +28,8 @@ export function sampleTv() {
     events: {
       items: [
         { id: "trivia", title: "Trivia Night", repeat: "weekly", weekday: 4, time: "8:00 PM", banner: "Every Thursday",
-          details: "This month's theme: Trailer Trash Night — last Thursday is a costume party, dress the theme!", host: "Christian", image: "/board/assets/christian.jpg" },
+          host: "Christian", image: "/board/assets/christian.jpg", featured: true, themes: { [monthKey(today)]: "Trailer Trash Night" },
+          themeNote: "The last Thursday each month is a **costume party** — dress the theme!", lastNote: "Tonight is the costume party — come dressed for the theme!" },
         { id: "bingo", title: "Bingo Night", repeat: "weekly", weekday: 5, time: "8:00 PM", banner: "Every Friday", details: "Cash prizes" },
         { id: "comedy", title: "Catch All Comedy", repeat: "monthly", weekday: 1, nth: -1, time: "8:00 PM", banner: "Last Monday Monthly", details: "Grab the mic — all welcome" },
         { id: "openmic", title: "Acoustic Open Mic", repeat: "once", date: inDays(0), time: "8:00 PM", banner: "Live Music", details: "Acoustic jam sesh" },
@@ -51,7 +52,7 @@ export function sampleTv() {
       { name: "Kava", blurb: "A root from the South Pacific, traditionally shared in a coconut shell. Relaxing, social, alcohol-free." },
       { name: "Kratom", blurb: "A leaf from Southeast Asia brewed as a tea. Ask your kavatender about strengths and flavors." },
     ] },
-    community: { photos: [], footer: "Send your photos to Christian@kavaandcompany.com" },
+    community: { photos: ["/board/assets/crew/josh.jpg", "/board/assets/crew/daniel.jpg", "/board/assets/crew/wheatyn.jpg", "/board/assets/christian.jpg", "/board/assets/drinks/welcome.jpg", "/board/assets/drinks/upnext.jpg"], footer: "Send your photos to **Christian@kavaandcompany.com**" },
     ticker: { items: [
       "Happy Hour **10–11 AM · 2–4 PM · 9–10 PM**",
       "Ask your kavatender for your **perfect pour**",

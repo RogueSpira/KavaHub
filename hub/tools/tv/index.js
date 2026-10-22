@@ -11,7 +11,7 @@ import { h, clear, modal, confirm, field, seg } from "../../js/ui.js";
 import { shrinkImage } from "../../js/images.js";
 import {
   SECTIONS, sectionById, SLIDES, slideById, DEFAULT_PERMS, withDefaults, crewFor, businessKey, businessDate, keyOf,
-  dateOfKey, WEEKDAYS, NTH, occurrences, repeatLabel, isRecurring, okImage, timeMinutes, fmtTime,
+  dateOfKey, WEEKDAYS, NTH, occurrences, repeatLabel, isRecurring, okImage, timeMinutes, fmtTime, monthKey, themeFor,
 } from "../../js/tv-shared.js";
 
 const BOARD = "/board/";
@@ -200,7 +200,8 @@ function eventsView(pane, ctx, store) {
     const row = (e) => h("button", { type: "button", class: `row tv-ev${e.active === false ? " row-off" : ""}`, onclick: () => editEvent(ctx, store, e) },
       okImage(e.image) ? h("img", { class: "tv-ev-thumb", src: e.image, alt: "" }) : h("span", { class: "tv-ev-thumb empty" }, "📅"),
       h("span", { class: "row-main" },
-        h("span", { class: "row-title" }, e.title, e.active === false ? h("span", { class: "chip chip-off" }, "Off") : null),
+        h("span", { class: "row-title" }, e.title, e.featured ? h("span", { class: "chip chip-ok" }, "Own slide") : null, e.active === false ? h("span", { class: "chip chip-off" }, "Off") : null),
+        e.featured ? h("span", { class: "muted small" }, themeFor(e, businessDate()) ? `This month's theme: ${themeFor(e, businessDate())}` : "No theme set for this month") : null,
         h("span", { class: "row-sub" }, [repeatLabel(e), e.time, e.banner].filter(Boolean).join(" · ")),
         isRecurring(e) && next[e.id] && e.active !== false ? h("span", { class: "muted small" }, `Next: ${next[e.id].toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}`) : null),
       h("span", { class: "row-go" }, "›"));
@@ -236,7 +237,25 @@ async function editEvent(ctx, store, ev) {
   const host = h("input", { class: "input", maxlength: "60", value: e.host || "", placeholder: "Optional" });
   const from = h("input", { class: "input", type: "date", value: e.from || "" });
   const until = h("input", { class: "input", type: "date", value: e.until || "" });
-  let image = e.image || "", active = e.active !== false, repeat = e.repeat || "once";
+  let image = e.image || "", active = e.active !== false, repeat = e.repeat || "once", featured = !!e.featured;
+
+  // Featured: its own slide with a theme for each month (Trivia).
+  const today = businessDate(), thisM = monthKey(today), nextD = new Date(today.getFullYear(), today.getMonth() + 1, 1), nextM = monthKey(nextD);
+  const mName = (d) => d.toLocaleDateString([], { month: "long" });
+  const themes = { ...(e.themes || {}) };
+  const themeNow = h("input", { class: "input", maxlength: "80", value: themes[thisM] || "", placeholder: "e.g. Trailer Trash Night" });
+  const themeNext = h("input", { class: "input", maxlength: "80", value: themes[nextM] || "", placeholder: "Optional — switches over on the 1st" });
+  const themeNote = h("input", { class: "input", maxlength: "160", value: e.themeNote ?? "", placeholder: "e.g. The last Thursday each month is a costume party — dress the theme!" });
+  const lastNote = h("input", { class: "input", maxlength: "160", value: e.lastNote ?? "", placeholder: "e.g. Tonight is the costume party — come dressed for the theme!" });
+  const featBox = h("div", { class: "form" });
+  function paintFeat() {
+    add(clear(featBox), featured ? [
+      h("div", { class: "tv-two" }, field(`${mName(today)}'s theme`, themeNow), field(`${mName(nextD)}'s theme`, themeNext)),
+      field("Line under the theme", themeNote),
+      repeat !== "once" ? field("Line on the last one of the month (that night only)", lastNote) : null,
+    ] : null);
+  }
+  paintFeat();
 
   const whenBox = h("div", { class: "form" });
   function paintWhen() {
@@ -254,6 +273,9 @@ async function editEvent(ctx, store, ev) {
     h("div", { class: "tv-two" }, field("Time", time), field("Tag", banner)),
     field("Details", details, "Wrap words in **double stars** to make them gold on the TV."),
     field("Host", host),
+    field("Own slide with a monthly theme", seg([{ value: true, label: "Yes" }, { value: false, label: "No" }], featured, (v) => { featured = v; paintFeat(); }),
+      "For Trivia: it gets its own slide each rotation and stays off Tonight, Up Next and Every Week, so it only shows once."),
+    featBox,
     field("Flyer or photo", photoInput(ctx, image, (v) => { image = v; }, { label: "Add flyer" })),
     field("Show on the TVs", seg([{ value: true, label: "On" }, { value: false, label: "Off", cls: "danger" }], active, (v) => { active = v; })));
 
@@ -275,6 +297,15 @@ async function editEvent(ctx, store, ev) {
     if (time.value) out.time = fmtTime(time.value);
     for (const [k, inp] of [["banner", banner], ["details", details], ["host", host]]) if (inp.value.trim()) out[k] = inp.value.trim();
     if (image) out.image = image;
+    if (featured) {
+      out.featured = true;
+      // Keep last month's and later themes; drop older ones.
+      const keep = Object.fromEntries(Object.entries(themes).filter(([k, v]) => v && k >= monthKey(new Date(today.getFullYear(), today.getMonth() - 1, 1))));
+      for (const [k, inp] of [[thisM, themeNow], [nextM, themeNext]]) { if (inp.value.trim()) keep[k] = inp.value.trim(); else delete keep[k]; }
+      out.themes = keep;
+      if (themeNote.value.trim()) out.themeNote = themeNote.value.trim();
+      if (repeat !== "once" && lastNote.value.trim()) out.lastNote = lastNote.value.trim();
+    }
     await writeEvents(ctx, store, (items) => (ev ? items.map((x) => (x.id === ev.id ? out : x)) : [...items, out]));
     ctx.log(ev ? "Edited event" : "Added event", t); ctx.toast(ev ? "Saved — the TVs update in a few seconds" : "Event added");
     return true;
@@ -507,6 +538,8 @@ function screensView(pane, ctx, store) {
     for (const id of ids) {
       const s = screens[id];
       s.slides = (s.slides || []).map((x) => (typeof x === "string" ? { id: x } : x)).filter((x) => slideById(x.id));
+      // Screens saved before the Featured slide existed show it in front of Tonight (same as the TVs do).
+      if (!s.v) { if (!s.slides.some((x) => x.id === "featured")) { const at = s.slides.findIndex((x) => x.id === "tonight"); s.slides.splice(at >= 0 ? at : 0, 0, { id: "featured" }); } s.v = 2; }
       const onIds = s.slides.map((x) => x.id);
       const rows = [...s.slides.map((x) => ({ ...x, on: true })), ...SLIDES.filter((x) => !onIds.includes(x.id)).map((x) => ({ id: x.id, on: false }))];
       const slideList = h("div", { class: "tv-slide-list" }, rows.map((r) => {
@@ -540,7 +573,7 @@ function screensView(pane, ctx, store) {
     save.disabled = true;
     try {
       const latest = withDefaults("config", store.tv.config);
-      const clean = Object.fromEntries(Object.entries(screens).map(([id, s]) => [id, { name: (s.name || "").trim() || `TV ${id}`, theme: s.theme === "orange" ? "orange" : "green", seconds: Number(s.seconds) || 12, slides: s.slides }]));
+      const clean = Object.fromEntries(Object.entries(screens).map(([id, s]) => [id, { v: 2, name: (s.name || "").trim() || `TV ${id}`, theme: s.theme === "orange" ? "orange" : "green", seconds: Number(s.seconds) || 12, slides: s.slides }]));
       await ctx.api.saveTv("config", { perms: latest.perms || DEFAULT_PERMS, ...latest, screens: clean });
       saved(ctx, "Screens");
     } catch (e) { fail(ctx, e); }
@@ -550,7 +583,7 @@ function screensView(pane, ctx, store) {
     h("div", { class: "pane-head" }, h("p", { class: "muted" }, "Pick what each TV shows. Each TV opens its own address."),
       h("button", { class: "btn", type: "button", onclick: () => {
         const n = Math.max(0, ...Object.keys(screens).map(Number).filter((x) => !isNaN(x))) + 1;
-        screens[String(n)] = { name: `TV ${n}`, theme: "green", seconds: 12, slides: SLIDES.filter((x) => x.id !== "feud").map((x) => ({ id: x.id })) };
+        screens[String(n)] = { v: 2, name: `TV ${n}`, theme: "green", seconds: 12, slides: SLIDES.filter((x) => x.id !== "feud").map((x) => ({ id: x.id })) };
         paint();
       } }, "+ Add a TV")),
     box, h("div", { class: "cl-edit-actions tv-save" }, h("span", { class: "spacer" }), save));

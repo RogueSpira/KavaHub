@@ -124,6 +124,59 @@ service cloud.firestore {
               && sectionEditor(docId));
       }
 
+      // Side Quests: the board of extra jobs. Use sees the board and signs off ("I did it",
+      // optional photo) in their own name; Manage adds quests and approves or sends back sign-offs.
+      // A quest can be set to unlock on a date (e.g. taking down seasonal decorations).
+      // Each approved sign-off is a star.
+      match /tools-data/quests/items/{id} {
+        function validQuest(d) {
+          return d.title is string && d.title.size() > 0 && d.title.size() <= 120
+            && d.details is string && d.details.size() <= 1000
+            && d.repeat is bool && d.open is bool
+            && d.get('unlockOn', '') is string && d.get('unlockOn', '').size() <= 10
+            && (d.get('unlockAt', null) == null || d.get('unlockAt', null) is timestamp)
+            && d.updatedAt == request.time && d.updatedBy == me(loc).name;
+        }
+        allow read: if can(loc, 'quests', 1);
+        allow create: if can(loc, 'quests', 2)
+          && request.resource.data.keys().hasOnly(['title', 'details', 'repeat', 'open', 'unlockOn', 'unlockAt', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'])
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.createdBy == me(loc).name
+          && validQuest(request.resource.data);
+        allow update: if can(loc, 'quests', 2)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'details', 'repeat', 'open', 'unlockOn', 'unlockAt', 'updatedAt', 'updatedBy'])
+          && validQuest(request.resource.data);
+        allow delete: if can(loc, 'quests', 2);
+      }
+      match /tools-data/quests/subs/{id} {
+        function questPath(qid) { return /databases/$(database)/documents/locations/$(loc)/tools-data/quests/items/$(qid); }
+        allow read: if can(loc, 'quests', 1);
+        allow create: if can(loc, 'quests', 1)
+          && request.resource.data.keys().hasOnly(['questId', 'questTitle', 'uid', 'name', 'note', 'photo', 'at', 'status'])
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.name == me(loc).name
+          && request.resource.data.at == request.time
+          && request.resource.data.status == 'pending'
+          && request.resource.data.questId is string && request.resource.data.questId.size() <= 60
+          && request.resource.data.questTitle is string && request.resource.data.questTitle.size() <= 120
+          && request.resource.data.note is string && request.resource.data.note.size() <= 500
+          && request.resource.data.photo is string
+          && (request.resource.data.photo == '' || request.resource.data.photo.matches('^/[.]netlify/functions/hub[?]media=[a-z0-9.-]+$'))
+          && exists(questPath(request.resource.data.questId))
+          && get(questPath(request.resource.data.questId)).data.open == true
+          // Quests set to unlock on a date can't be signed off before then.
+          && (get(questPath(request.resource.data.questId)).data.get('unlockAt', null) == null
+              || get(questPath(request.resource.data.questId)).data.get('unlockAt', null) <= request.time);
+        allow update: if can(loc, 'quests', 2)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'reviewNote', 'reviewedBy', 'reviewedAt'])
+          && request.resource.data.status in ['approved', 'rejected']
+          && request.resource.data.reviewNote is string && request.resource.data.reviewNote.size() <= 300
+          && request.resource.data.reviewedBy == me(loc).name
+          && request.resource.data.reviewedAt == request.time;
+        allow delete: if can(loc, 'quests', 2)
+          || (can(loc, 'quests', 1) && resource.data.uid == request.auth.uid && resource.data.status == 'pending');
+      }
+
       // Knowledge Bank: Use reads; Manage writes, edits and deletes.
       match /tools-data/knowledge/articles/{id} {
         function validArticle(d) {

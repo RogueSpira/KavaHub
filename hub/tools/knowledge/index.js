@@ -4,18 +4,24 @@
 //   #/tool/knowledge/a/<id>     read an article
 //   #/tool/knowledge/new        write a new article (Manage)
 //   #/tool/knowledge/edit/<id>  edit (Manage)
-import { h, clear, confirm, field, timeAgo } from "../../js/ui.js";
+import { h, clear, confirm, field, seg, timeAgo } from "../../js/ui.js";
 import { render, snippet, FORMAT_HELP } from "./format.js";
 import { shrinkImage } from "../../js/images.js";
 
-const DEFAULT_CATEGORIES = ["How-To", "Recipes", "Knowledge"];
+// Every article sits in one of these. Older articles saved under the first names are shown in the new ones.
+const CATEGORIES = ["Recipes", "Processes", "Education"];
+const OLD_NAMES = { "how-to": "Processes", "howto": "Processes", "how to": "Processes", process: "Processes", knowledge: "Education", recipe: "Recipes" };
+export const categoryOf = (c) => {
+  const k = String(c || "").trim().toLowerCase();
+  return CATEGORIES.find((x) => x.toLowerCase() === k) || OLD_NAMES[k] || "Education";
+};
 const MAX_BODY = 20000;
 
 export function mount(el, ctx) {
   const manage = ctx.level >= 2;
   const [view, id] = ctx.sub;
   let articles = null, failed = false, paintView = () => {};
-  const stop = ctx.api.watchArticles((list, err) => { if (err) failed = true; articles = list || []; paintView(); });
+  const stop = ctx.api.watchArticles((list, err) => { if (err) failed = true; articles = (list || []).map((a) => ({ ...a, category: categoryOf(a.category) })); paintView(); });
 
   if (view === "a" && id) paintView = articleView(el, ctx, id, () => articles, () => failed, manage);
   else if (manage && view === "new") paintView = editorView(el, ctx, null, () => articles);
@@ -25,11 +31,6 @@ export function mount(el, ctx) {
   return () => stop();
 }
 
-const categoriesOf = (articles) => {
-  const set = new Set(DEFAULT_CATEGORIES);
-  for (const a of articles || []) if (a.category) set.add(a.category);
-  return [...set];
-};
 
 /* ---------------- list ---------------- */
 function listView(el, ctx, getArticles, getFailed, manage) {
@@ -47,10 +48,9 @@ function listView(el, ctx, getArticles, getFailed, manage) {
     clear(list);
     if (getFailed()) { list.append(h("p", { class: "modal-err" }, "Couldn't load the Knowledge Bank. The database rules may need updating.")); return; }
     if (!articles) { list.append(h("p", { class: "loading" }, "Loading…")); return; }
-    const cats = ["All", ...categoriesOf(articles).filter((c) => articles.some((a) => a.category === c))];
-    if (!cats.includes(cat)) cat = "All";
+    const cats = ["All", ...CATEGORIES];
     clear(chips);
-    if (cats.length > 2) for (const c of cats) {
+    if (articles.length) for (const c of cats) {
       const n = c === "All" ? articles.length : articles.filter((a) => a.category === c).length;
       chips.append(h("button", { type: "button", class: `kb-cat${c === cat ? " on" : ""}`, onclick: () => { cat = c; paint(); } }, `${c} `, h("span", { class: "muted" }, n)));
     }
@@ -103,9 +103,10 @@ function articleView(el, ctx, id, getArticles, getFailed, manage) {
 function editorView(el, ctx, id, getArticles) {
   let loaded = false, previewing = false;
   const title = h("input", { class: "input", type: "text", maxlength: "120", placeholder: "e.g. How to change the CO2 tank" });
-  const listId = `kb-cats-${Math.random().toString(36).slice(2, 7)}`;
-  const datalist = h("datalist", { id: listId });
-  const category = h("input", { class: "input", type: "text", maxlength: "40", list: listId, placeholder: "How-To, Recipes, Knowledge… or type a new one" });
+  let catValue = "Recipes";
+  const category = h("div");
+  const paintCat = () => clear(category).append(seg(CATEGORIES.map((c) => ({ value: c, label: c })), catValue, (v) => { catValue = v; }));
+  paintCat();
   const bodyIn = h("textarea", { class: "input textarea kb-editor-body", rows: "16", maxlength: String(MAX_BODY),
     placeholder: "Write the article here.\n\n## Ingredients\n- 8 oz kava\n- 2 oz mango juice\n\n## Steps\n1. Fill a shell with ice\n2. …" });
   const preview = h("div", { class: "card kb-preview" });
@@ -123,7 +124,7 @@ function editorView(el, ctx, id, getArticles) {
 
   el.append(h("button", { class: "btn ghost small", type: "button", onclick: () => ctx.navigate(id ? `${ctx.base}/a/${id}` : ctx.base) }, "← Cancel"),
     h("h2", { class: "cl-date" }, id ? "Edit article" : "New article"),
-    h("div", { class: "form kb-form" }, datalist, field("Title", title), field("Category", category),
+    h("div", { class: "form kb-form" }, field("Title", title), field("Category", category),
       h("div", { class: "field" }, h("span", { class: "field-label" }, "Article"),
         h("div", { class: "kb-photo-bar" }, photoBtn, fileIn, photoStatus), bodyIn, help), preview,
       err, h("div", { class: "cl-edit-actions" }, previewBtn, h("span", { class: "spacer" }), save)));
@@ -170,7 +171,7 @@ function editorView(el, ctx, id, getArticles) {
 
   async function doSave() {
     err.textContent = "";
-    const t = title.value.trim(), c = category.value.trim(), b = bodyIn.value.trim();
+    const t = title.value.trim(), c = catValue, b = bodyIn.value.trim();
     if (!t) { err.textContent = "Give the article a title."; return; }
     if (!b) { err.textContent = "The article is empty."; return; }
     if (uploading) { err.textContent = "Wait for the photo to finish uploading."; return; }
@@ -185,14 +186,12 @@ function editorView(el, ctx, id, getArticles) {
 
   return () => {
     const articles = getArticles();
-    clear(datalist);
-    for (const c of categoriesOf(articles)) datalist.append(h("option", { value: c }));
     if (loaded || !articles) return;
     loaded = true;
     if (id) {
       const a = articles.find((x) => x.id === id);
       if (!a) { err.textContent = "This article no longer exists."; save.disabled = true; return; }
-      title.value = a.title; category.value = a.category || ""; bodyIn.value = a.body;
+      title.value = a.title; catValue = a.category; paintCat(); bodyIn.value = a.body;
     }
   };
 }

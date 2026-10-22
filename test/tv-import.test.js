@@ -57,12 +57,14 @@ test("convert the old sheets", () => {
   assert.deepEqual(sections.crew.weekly[2], { opener: "daniel", closer: "kai" });
   const ev = sections.events.items;
   assert.equal(ev.length, 3);
-  assert.equal(ev[0].repeat, "weekly"); assert.equal(ev[0].weekday, 4); assert.equal(ev[0].details, "Theme: **80s**"); assert.equal(ev[0].image, "/board/assets/christian.jpg");
+  assert.equal(ev[0].repeat, "weekly"); assert.equal(ev[0].weekday, 4); assert.equal(ev[0].featured, true);
+  assert.deepEqual(ev[0].themes, { "2026-10": "Theme: **80s**" }); assert.equal(ev[0].details, undefined); assert.match(ev[0].themeNote, /last Thursday/); assert.equal(ev[0].image, "/board/assets/christian.jpg");
   assert.equal(ev[1].repeat, "once"); assert.equal(ev[1].date, "2026-10-24");
   assert.equal(ev[2].active, false);
   assert.deepEqual(sections.ticker.items, ["Follow us **@kava**"]);
   assert.deepEqual(sections.products.items[0].images, ["/board/assets/christian.jpg", "https://x.example/a.jpg"]);
   assert.deepEqual(sections.screens["1"].slides.map((s) => s.id), ["welcome", "crew", "tonight", "weekly", "feud"]);
+  assert.equal(sections.screens["1"].v, 2);
   assert.equal(sections.screens["1"].theme, "orange");
   assert.equal(sections.community.driveFolder, COMMUNITY_FOLDER);
   assert.equal(sections.community.photos, undefined);

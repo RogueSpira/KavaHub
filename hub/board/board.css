@@ -258,3 +258,10 @@ body[data-theme="orange"] { --glowRGB: 255, 176, 102; --warmRGB: 255, 207, 58; -
 .dots i.on { box-shadow: 0 0 1.4vh rgba(var(--warmRGB), .85); }
 .pill { box-shadow: 0 0 1.8vh rgba(var(--glowRGB), .2); }
 #ticker { box-shadow: 0 -.3vh 2.2vh rgba(var(--glowRGB), .28); }
+
+/* ---------- Featured event: this month's theme ---------- */
+.theme-box { padding: 2vh 2.4vw 2.2vh; max-width: 100%; border-color: rgba(var(--warmRGB), .55); box-shadow: 0 0 3vh rgba(var(--warmRGB), .3); }
+.theme-lbl { font-family: var(--round); font-weight: 700; font-size: 2.3vh; letter-spacing: .5vh; text-transform: uppercase; color: var(--lime); text-shadow: 0 0 1.4vh rgba(var(--glowRGB), .7); }
+.theme-name { font-family: var(--groovy); font-size: 6vh; line-height: 1.08; color: var(--sun); margin-top: .6vh; -webkit-text-stroke: .2vh var(--ink); paint-order: stroke fill; text-shadow: .4vh .4vh 0 var(--ink), 0 0 2.6vh rgba(var(--warmRGB), .55); }
+.theme-note { font-family: var(--round); font-weight: 600; font-size: 2.8vh; color: var(--cream); margin-top: 1vh; }
+.theme-note b { color: var(--sun); }

@@ -212,6 +212,7 @@ test("pictures: Manage on the tool can upload; others can't; bad input refused; 
   await t.api("adminCreateUser", { name: "Daniel", roleId: "kavatender", pin: "1357" }, t.owner);
   const dan = (await t.api("pinLogin", { pin: "1357" })).token;
   await rejects(t.api("mediaUpload", { tool: "knowledge", data: png }, dan), 403);           // kavatender = Use only
+  assert.ok((await t.api("mediaUpload", { tool: "quests", data: png }, dan)).src);          // Side Quests photos: Use is enough
   await rejects(t.api("mediaUpload", { tool: "knowledge", data: png }), 401);                // not signed in
   await rejects(t.api("mediaUpload", { tool: "admin", data: png }, t.owner), 400);           // not a picture tool
   await rejects(t.api("mediaUpload", { tool: "knowledge", data: "data:text/html;base64,PGI+" }, t.owner), 400);

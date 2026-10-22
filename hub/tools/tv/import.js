@@ -1,7 +1,7 @@
 // One-time move from the old Google Sheets board into Kava Hub.
 // fetchSheets() reads the old sheets straight from Google (they're shared "anyone with the link"),
 // and convert() turns them into the new TV sections. convert() is plain data in, data out, so it's tested.
-import { keyOf, WEEKDAYS, SLIDES } from "../../js/tv-shared.js";
+import { keyOf, WEEKDAYS, SLIDES, monthKey } from "../../js/tv-shared.js";
 
 export const SHEET_IDS = {
   schedule: "1lbk-O6Qb5t_1KBA9Tgxji_sa39i6AM_3s1uRV4FLezI",
@@ -93,7 +93,7 @@ export function patternFrom(text) {
   return nth ? { repeat: "monthly", weekday, nth } : { repeat: "weekly", weekday };
 }
 
-const OLD_SLIDES = { kavatenders: "crew", spotlight: "tonight", trivia: "tonight", everyweek: "weekly", comingup: "upnext", happy: "happyhour", calendar2: "calendar" };
+const OLD_SLIDES = { kavatenders: "crew", spotlight: "tonight", trivia: "featured", everyweek: "weekly", comingup: "upnext", happy: "happyhour", calendar2: "calendar" };
 export function slideFrom(key) {
   const k = t(key).toLowerCase();
   const id = OLD_SLIDES[k] || k;
@@ -137,7 +137,7 @@ export function convert(rows, today = new Date()) {
   {
     const rs = rows.events || [], eh = header(rs);
     const c = { date: colOf(eh, "date"), time: colOf(eh, "time", "when"), banner: colOf(eh, "banner", "badge"), title: colOf(eh, "header 1", "header1", "header", "title"),
-      details: colOf(eh, "details", "theme"), host: colOf(eh, "host"), image: colOf(eh, "image", "flyer", "photo", "graphic") };
+      details: colOf(eh, "details", "theme"), host: colOf(eh, "host"), image: colOf(eh, "image", "flyer", "photo", "graphic"), type: colOf(eh, "type") };
     const g = (r, k) => (k >= 0 ? t(r[k]) : "");
     const items = []; let past = 0; const unsure = [];
     for (const r of rs.slice(1)) {
@@ -153,6 +153,15 @@ export function convert(rows, today = new Date()) {
         const p = patternFrom(`${ev.banner} ${ev.time} ${title}`);
         if (!p) { unsure.push(title); Object.assign(ev, { repeat: "weekly", weekday: 4, active: false }); }
         else Object.assign(ev, p);
+      }
+      // The old board gave Trivia its own slide with "This Month's Theme Night" (from Details).
+      if (g(r, c.type).toLowerCase() === "trivia" || (/trivia/i.test(title) && ev.repeat !== "once" && !items.some((x) => x.featured))) {
+        ev.featured = true;
+        if (ev.details) ev.themes = { [monthKey(today)]: ev.details };
+        delete ev.details;
+        const wd = WEEKDAYS[ev.weekday] || "Thursday";
+        ev.themeNote = `The last ${wd} each month is a costume party — dress the theme!`;
+        ev.lastNote = "Tonight is the costume party — come dressed for the theme!";
       }
       for (const k of Object.keys(ev)) if (ev[k] === "") delete ev[k];
       items.push(ev);
@@ -203,7 +212,7 @@ export function convert(rows, today = new Date()) {
       if (blank(r) || iS < 0) continue;
       const id = t(r[iS]).replace(/[^A-Za-z0-9_-]/g, "").slice(0, 20); if (!id) continue;
       const ids = [...new Set((iL >= 0 ? t(r[iL]) : "").split(",").map(slideFrom).filter(Boolean))];
-      screens[id] = { name: `TV ${id}`, theme: t(r[iT]).toLowerCase() === "orange" ? "orange" : "green", seconds: 12,
+      screens[id] = { v: 2, name: `TV ${id}`, theme: t(r[iT]).toLowerCase() === "orange" ? "orange" : "green", seconds: 12,
         slides: (ids.length ? ids : SLIDES.filter((s) => s.id !== "feud").map((s) => s.id)).map((x) => ({ id: x })) };
     }
     if (Object.keys(screens).length) { sections.screens = screens; notes.push(`Screens: ${Object.keys(screens).map((k) => `TV ${k}`).join(", ")}.`); }

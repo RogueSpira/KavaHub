@@ -14,13 +14,13 @@ const id = (p) => `${p}-${(seq++).toString(36)}`;
 
 const ROLES = {
   owner: { id: "owner", name: "Owner", rank: 100, system: true, perms: {} },
-  manager: { id: "manager", name: "Manager", rank: 50, system: false, perms: { tv: 2, checklists: 2, knowledge: 2, suggestions: 2, admin: 0 } },
-  kavatender: { id: "kavatender", name: "Kavatender", rank: 10, system: false, perms: { tv: 1, checklists: 1, knowledge: 1, suggestions: 1, admin: 0 } },
+  manager: { id: "manager", name: "Manager", rank: 50, system: false, perms: { tv: 2, checklists: 2, knowledge: 2, suggestions: 2, quests: 2, admin: 0 } },
+  kavatender: { id: "kavatender", name: "Kavatender", rank: 10, system: false, perms: { tv: 1, checklists: 1, knowledge: 1, suggestions: 1, quests: 1, admin: 0 } },
 };
 const store = {
   location: fresh ? null : { id: LOCATION_ID, name: "Kava & Co. Mandarin", setupDone: true, settings: { autoLockSeconds: 120 } },
   roles: fresh ? {} : structuredClone(ROLES),
-  tools: fresh ? {} : Object.fromEntries(["tv", "checklists", "knowledge", "suggestions", "admin"].map((t, i) => [t, { enabled: true, order: i }])),
+  tools: fresh ? {} : Object.fromEntries(["tv", "checklists", "quests", "knowledge", "suggestions", "admin"].map((t, i) => [t, { enabled: true, order: i }])),
   users: {},
   pins: {}, // pin -> uid  (demo only; the real backend never stores PINs)
   activity: [],
@@ -81,7 +81,7 @@ export async function setupOwner({ setupCode, name, pin }) {
   checkPin(pin);
   store.location = { id: LOCATION_ID, name: "Kava & Co. Mandarin", setupDone: true, settings: { autoLockSeconds: 120 } };
   store.roles = structuredClone(ROLES);
-  store.tools = Object.fromEntries(["tv", "checklists", "knowledge", "suggestions", "admin"].map((t, i) => [t, { enabled: true, order: i }]));
+  store.tools = Object.fromEntries(["tv", "checklists", "quests", "knowledge", "suggestions", "admin"].map((t, i) => [t, { enabled: true, order: i }]));
   currentUid = addUser(cleanName(name), "owner", pin);
   addActivity("admin", "Set up location", `Owner: ${name}`);
 }
@@ -281,9 +281,9 @@ export function watchChecklistHistory(since, cb) {
 
 /* ---------- Knowledge Bank ---------- */
 const kb = fresh ? [] : [
-  { title: "Making a kava batch (sample)", category: "How-To", body: "## What you need\n- 1 strainer bag\n- Warm water (not hot)\n- Kava root powder\n\n## Steps\n1. Measure the powder into the strainer bag.\n2. Add warm water to the bucket.\n3. Knead the bag for **10 minutes**, squeezing firmly.\n4. Wring out the bag and discard the pulp.\n\n**Tip:** label the batch with the time it was made." },
+  { title: "Making a kava batch (sample)", category: "Processes", body: "## What you need\n- 1 strainer bag\n- Warm water (not hot)\n- Kava root powder\n\n## Steps\n1. Measure the powder into the strainer bag.\n2. Add warm water to the bucket.\n3. Knead the bag for **10 minutes**, squeezing firmly.\n4. Wring out the bag and discard the pulp.\n\n**Tip:** label the batch with the time it was made." },
   { title: "Mango Tango (sample)", category: "Recipes", body: "## Ingredients\n- 8 oz kava\n- 2 oz mango juice\n- Splash of lime\n\n## Build\n1. Fill a shell with ice.\n2. Add kava, then mango juice.\n3. Top with lime and stir.\n\nServe with a lime wheel." },
-  { title: "What is kava? (sample)", category: "Knowledge", body: "Kava is a drink made from the root of the *Piper methysticum* plant, traditional across the Pacific Islands.\n\nMore background: https://en.wikipedia.org/wiki/Kava" },
+  { title: "What is kava? (sample)", category: "Education", body: "Kava is a drink made from the root of the *Piper methysticum* plant, traditional across the Pacific Islands.\n\nMore background: https://en.wikipedia.org/wiki/Kava" },
 ].map((a, i) => ({ id: `kb${i}`, ...a, createdBy: "Rogue", updatedBy: "Rogue", createdAt: new Date(Date.now() - (5 - i) * 864e5), updatedAt: new Date(Date.now() - (5 - i) * 864e5) }));
 export function watchArticles(cb) { return watch(() => cb(structuredClone([...kb].sort((a, b) => a.title.localeCompare(b.title))))); }
 export async function saveArticle(session, aid, { title, category, body }) {
@@ -335,4 +335,62 @@ export async function clearTvField(docId, path) {
   for (const p of parts.slice(0, -1)) o = o?.[p];
   if (o) delete o[parts.at(-1)];
   changed();
+}
+
+/* ---------- Side Quests ---------- */
+const quests = [], qsubs = [];
+if (!fresh) {
+  const days = (n) => new Date(Date.now() - n * 864e5);
+  const uidOf = (n) => Object.values(store.users).find((u) => u.name === n)?.uid;
+  const q = (title, details, repeat = false, open = true) => { const x = { id: id("q"), title, details, repeat, open, createdAt: days(20), createdBy: "Rogue", updatedAt: days(20), updatedBy: "Rogue" }; quests.push(x); return x; };
+  const fridge = q("Deep clean the walk-in fridge", "Pull everything out, wipe shelves and walls, check dates on the way back in.");
+  const under = q("Sweep under the bar coolers", "Pull the kick plates and get everything underneath. Mop after.", true);
+  q("Organize the dry storage shelves", "Group like with like, label the bins, oldest stock to the front.");
+  q("Wipe down all the barstool legs", "Every stool, every leg. Degreaser + rag.", true);
+  const art = q("Dust the art and light fixtures", "Use the extendable duster in the closet.", false, false);
+  const deco = q("Take down the Halloween decorations", "Everything into the orange bins, bins to the top shelf in storage.");
+  { const d = new Date(); d.setDate(d.getDate() + 10); deco.unlockOn = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; deco.unlockAt = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 5); }
+  const sub = (quest, name, n, status, extra = {}) => qsubs.push({ id: id("qs"), questId: quest.id, questTitle: quest.title, uid: uidOf(name), name, note: "", photo: "", at: days(n), status, ...(status !== "pending" ? { reviewedBy: "Rogue", reviewedAt: days(n - 0.5), reviewNote: "" } : {}), ...extra });
+  for (let i = 0; i < 7; i++) sub(under, i % 3 ? "Daniel" : "Wheatyn", 18 - i * 2, "approved");
+  sub(art, "Josh", 12, "approved"); sub(under, "Josh", 3, "approved"); sub(under, "Daniel", 1, "approved");
+  for (let i = 0; i < 4; i++) sub(under, "Daniel", 30 + i, "approved");
+  sub(fridge, "Wheatyn", 0.2, "pending", { note: "Threw out two expired syrups.", photo: "/board/assets/drinks/upnext.jpg" });
+  sub(under, "Josh", 2, "rejected", { reviewNote: "Still a lot of dust behind the second cooler." });
+}
+const meName = () => me()?.name;
+const questLevel = () => { const u = me(); return !u ? 0 : u.roleId === "owner" ? 2 : (u.overrides.quests ?? store.roles[u.roleId]?.perms.quests ?? 0); };
+const needQuest = (lvl) => { if (questLevel() < lvl) throw new Error("Missing or insufficient permissions."); };
+export function watchQuests(cb) { return watch(() => cb(structuredClone(quests))); }
+const unlockAtOf = (key) => { if (!key) return null; const [y, m, d] = key.split("-").map(Number); return new Date(y, m - 1, d, 5); };
+export async function saveQuest(session, qid, { title, details, repeat, open, unlockOn = "" }) {
+  await wait(120); needQuest(2);
+  const data = { title, details, repeat: !!repeat, open: open !== false, unlockOn, unlockAt: unlockAtOf(unlockOn), updatedAt: now(), updatedBy: meName() };
+  if (qid) { Object.assign(quests.find((x) => x.id === qid), data); changed(); return qid; }
+  const x = { id: id("q"), ...data, createdAt: now(), createdBy: meName() };
+  quests.unshift(x); changed(); return x.id;
+}
+export async function setQuestOpen(session, qid, open) { await wait(80); needQuest(2); Object.assign(quests.find((x) => x.id === qid), { open, updatedAt: now() }); changed(); }
+export async function deleteQuest(qid) { await wait(80); needQuest(2); const i = quests.findIndex((x) => x.id === qid); if (i >= 0) quests.splice(i, 1); changed(); }
+export function watchQuestSubs(cb) { return watch(() => cb(structuredClone(qsubs).sort((a, b) => b.at - a.at))); }
+export async function submitQuest(session, quest, { note, photo }) {
+  await wait(150); needQuest(1);
+  const qq = quests.find((x) => x.id === quest.id);
+  if (!qq?.open) throw new Error("That quest is closed.");
+  if (qq.unlockAt && qq.unlockAt > now()) throw new Error("Missing or insufficient permissions.");
+  qsubs.unshift({ id: id("qs"), questId: quest.id, questTitle: quest.title, uid: session.uid, name: session.me.name, note: note || "", photo: photo || "", at: now(), status: "pending" });
+  changed();
+}
+export async function reviewQuestSub(session, sub, { status, reviewNote, closeQuest }) {
+  await wait(120); needQuest(2);
+  Object.assign(qsubs.find((x) => x.id === sub.id), { status, reviewNote: reviewNote || "", reviewedBy: session.me.name, reviewedAt: now() });
+  if (closeQuest) { const q = quests.find((x) => x.id === sub.questId); if (q) q.open = false; }
+  changed();
+}
+export async function withdrawQuestSub(sid) {
+  await wait(80);
+  const i = qsubs.findIndex((x) => x.id === sid);
+  if (i < 0) return;
+  const s = qsubs[i];
+  if (!(questLevel() >= 2 || (s.uid === currentUid && s.status === "pending"))) throw new Error("Missing or insufficient permissions.");
+  qsubs.splice(i, 1); changed();
 }

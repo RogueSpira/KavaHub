@@ -221,3 +221,39 @@ export const saveTv = (docId, data) => F.setDoc(docRef(`tv/${docId}`), data);
 export const mergeTv = (docId, data) => F.setDoc(docRef(`tv/${docId}`), data, { merge: true });
 // Remove a field inside a section, e.g. clear today's crew change: path "days.2026-10-20".
 export const clearTvField = (docId, path) => F.updateDoc(docRef(`tv/${docId}`), { [path]: F.deleteField() });
+
+/* ---------- Side Quests ---------- */
+// items: the quests on the board · subs: "I did it" sign-offs waiting for / after review.
+const SQ = "tools-data/quests";
+export function watchQuests(cb) {
+  return F.onSnapshot(F.query(col(`${SQ}/items`), F.orderBy("createdAt", "desc")),
+    (q) => cb(q.docs.map((d) => { const x = d.data(EST); return { id: d.id, ...x, createdAt: tsToDate(x.createdAt), updatedAt: tsToDate(x.updatedAt), unlockAt: tsToDate(x.unlockAt) }; })),
+    (e) => { console.warn("[hub] quests", e); cb(null, e); });
+}
+// unlockOn: "2026-11-01" or "" — opens at 5 AM that day (the start of the business day).
+const unlockAtOf = (key) => { if (!key) return null; const [y, m, d] = key.split("-").map(Number); return F.Timestamp.fromDate(new Date(y, m - 1, d, 5)); };
+export async function saveQuest(session, qid, { title, details, repeat, open, unlockOn = "" }) {
+  const data = { title, details, repeat: !!repeat, open: open !== false, unlockOn, unlockAt: unlockAtOf(unlockOn), updatedAt: F.serverTimestamp(), updatedBy: session.me.name };
+  if (qid) { await F.updateDoc(docRef(`${SQ}/items/${qid}`), data); return qid; }
+  const ref = await F.addDoc(col(`${SQ}/items`), { ...data, createdAt: F.serverTimestamp(), createdBy: session.me.name });
+  return ref.id;
+}
+export const setQuestOpen = (session, qid, open) => F.updateDoc(docRef(`${SQ}/items/${qid}`), { open, updatedAt: F.serverTimestamp(), updatedBy: session.me.name });
+export const deleteQuest = (qid) => F.deleteDoc(docRef(`${SQ}/items/${qid}`));
+export function watchQuestSubs(cb) {
+  return F.onSnapshot(F.query(col(`${SQ}/subs`), F.orderBy("at", "desc"), F.limit(3000)),
+    (q) => cb(q.docs.map((d) => { const x = d.data(EST); return { id: d.id, ...x, at: tsToDate(x.at), reviewedAt: tsToDate(x.reviewedAt) }; })),
+    (e) => { console.warn("[hub] quest sign-offs", e); cb(null, e); });
+}
+export const submitQuest = (session, quest, { note, photo }) => F.addDoc(col(`${SQ}/subs`), {
+  questId: quest.id, questTitle: quest.title, uid: session.uid, name: session.me.name,
+  note: note || "", photo: photo || "", at: F.serverTimestamp(), status: "pending",
+});
+// Approve or send back. Approving a one-time quest also takes it off the board.
+export async function reviewQuestSub(session, sub, { status, reviewNote, closeQuest }) {
+  const b = F.writeBatch(db);
+  b.update(docRef(`${SQ}/subs/${sub.id}`), { status, reviewNote: reviewNote || "", reviewedBy: session.me.name, reviewedAt: F.serverTimestamp() });
+  if (closeQuest) b.update(docRef(`${SQ}/items/${sub.questId}`), { open: false, updatedAt: F.serverTimestamp(), updatedBy: session.me.name });
+  await b.commit();
+}
+export const withdrawQuestSub = (sid) => F.deleteDoc(docRef(`${SQ}/subs/${sid}`));

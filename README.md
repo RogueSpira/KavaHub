@@ -145,6 +145,13 @@ loaded and which settings are present (no secret values are shown).
 - **App and server changes:** push to GitHub and Netlify redeploys automatically.
 - **`firestore.rules` changes:** paste into Firebase console → Firestore → Rules → Publish.
 
+## Side Quests
+
+Extra jobs outside the daily lists. Kavatenders tap **I did it** (with an optional photo and note);
+a manager approves it under **Review** and they get a ★. Every 5 ★ become a green ★. The **Leaderboard**
+shows this month and all time. One-time quests come off the board once approved; repeating ones stay up.
+A quest can be set to unlock on a date — it shows under "Coming up" until then.
+
 ## The TV board
 
 The TVs open `https://kavahub.netlify.app/board/?tv=1` (or `?tv=2`, …). No PIN on the TVs — the board only reads.

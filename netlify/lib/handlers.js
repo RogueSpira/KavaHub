@@ -21,7 +21,7 @@ export const MEDIA_ID_RE = /^[a-z][a-z0-9-]{1,30}\.[a-z0-9]{12,40}$/; // "<locat
 const COPY_HOSTS = /(^|\.)(googleusercontent\.com|drive\.google\.com)$/;
 
 // Tools that may upload pictures, and the access level needed.
-const MEDIA_TOOLS = { knowledge: 2, tv: 1 };
+const MEDIA_TOOLS = { knowledge: 2, tv: 1, quests: 1 };
 
 // Look up a stored picture for display. Public: ids are long and random, and pictures never change.
 export async function readMedia(media, id) {

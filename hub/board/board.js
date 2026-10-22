@@ -8,7 +8,7 @@
 import { firebaseConfig, LOCATION_ID, FIREBASE_SDK_VERSION, DEMO_MODE } from "../js/config.js";
 import {
   DEFAULT_SCREEN, SLIDES, withDefaults, crewFor, occurrences, isRecurring, repeatLabel, happyHourNow,
-  fmtRange, boldParts, okImage, businessDate, keyOf, WEEKDAYS,
+  fmtRange, boldParts, okImage, businessDate, keyOf, WEEKDAYS, isFeatured, themeFor, isLastOfMonth,
 } from "../js/tv-shared.js";
 
 const params = new URLSearchParams(location.search);
@@ -61,7 +61,12 @@ const doc = (id) => withDefaults(id, tv[id]);
 function screen() {
   const s = tv.config?.screens?.[SCREEN_ID];
   const base = s || DEFAULT_SCREEN;
-  const slides = (base.slides || []).map((x) => (typeof x === "string" ? { id: x } : x)).filter((x) => x && BUILD[x.id]);
+  let slides = (base.slides || []).map((x) => (typeof x === "string" ? { id: x } : x)).filter((x) => x && BUILD[x.id]);
+  // Screens saved before the Featured slide existed get it in front of Tonight automatically.
+  if (s && !s.v && !slides.some((x) => x.id === "featured")) {
+    const at = slides.findIndex((x) => x.id === "tonight");
+    slides = at >= 0 ? [...slides.slice(0, at), { id: "featured" }, ...slides.slice(at)] : [{ id: "featured" }, ...slides];
+  }
   return { ...DEFAULT_SCREEN, ...base, slides: slides.length ? slides : DEFAULT_SCREEN.slides };
 }
 
@@ -74,7 +79,9 @@ function whenLabel(o, today = businessDate()) {
   if (diff < 7) return `${WEEKDAYS[o.date.getDay()]}${t}`;
   return `${o.date.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}${t}`;
 }
-const upcoming = (days = 45) => occurrences(doc("events").items, businessDate(), days);
+// Everything except featured events (those have their own slide).
+const regularEvents = () => (doc("events").items || []).filter((e) => !isFeatured(e));
+const upcoming = (days = 45) => occurrences(regularEvents(), businessDate(), days);
 
 /* ---------------- slides ----------------
    Each builder gets how many times it has been shown (for paging) and returns
@@ -127,6 +134,31 @@ const BUILD = {
     return h("section", {}, h("div", { class: "kicker in" }, "Say hi to"), h("div", { class: "title sm retro in" }, "Your Kavatenders Today"), h("div", { class: "crew" }, cards));
   },
 
+  featured(count) {
+    const today = businessDate(), todayKey = keyOf(today);
+    const list = (doc("events").items || []).filter((e) => isFeatured(e) && e.active !== false)
+      .map((ev) => occurrences([ev], today, 40)[0]).filter(Boolean)
+      .sort((a, b) => a.date - b.date);
+    if (!list.length) return null;
+    const o = list[count % list.length], ev = o.ev;
+    const isTonight = o.key === todayKey, last = isLastOfMonth(o.date);
+    const theme = themeFor(ev, o.date);
+    const note = isTonight && last && ev.lastNote ? ev.lastNote : (ev.themeNote || "");
+    const flyer = img(ev.image, "flyer pop", ev.title);
+    return h("section", {},
+      h("div", { class: `spot${flyer ? "" : " center"}` }, flyer,
+        h("div", { class: "info" },
+          isTonight ? h("div", { class: "tonight" }, "Tonight!") : h("span", { class: "chip in" }, repeatLabel(ev)),
+          h("div", { class: "ev-title retro in d1" }, ev.title),
+          h("div", { class: "ev-when in d2" }, whenLabel(o)),
+          theme ? h("div", { class: "card theme-box in d3" },
+            h("div", { class: "theme-lbl" }, "This Month's Theme"),
+            h("div", { class: "theme-name" }, rich(theme)),
+            note ? h("div", { class: "theme-note" }, rich(note)) : null) : null,
+          !theme && ev.details ? h("div", { class: "card details in d3" }, rich(ev.details)) : null,
+          ev.host ? h("div", { class: "host in d4" }, "Hosted by ", h("b", {}, ev.host)) : null)));
+  },
+
   tonight(count) {
     const today = keyOf(businessDate());
     const all = upcoming(21);
@@ -147,7 +179,7 @@ const BUILD = {
   },
 
   weekly(count) {
-    const evs = (doc("events").items || []).filter((e) => isRecurring(e) && e.active !== false)
+    const evs = regularEvents().filter((e) => isRecurring(e) && e.active !== false)
       .sort((a, b) => ((Number(a.weekday) + 6) % 7) - ((Number(b.weekday) + 6) % 7));
     if (!evs.length) return null;
     const per = 4, pages = Math.ceil(evs.length / per), page = count % pages;
@@ -244,8 +276,10 @@ const BUILD = {
 
   community() {
     const c = doc("community");
-    const photos = [...(c.photos || []).map((p) => (typeof p === "string" ? p : p?.src)), ...drivePhotos].filter(okImage);
-    if (!photos.length) return null;
+    // Only photos that have already finished downloading, so the collage appears all at once.
+    const all = communityAll(), photos = all.filter((s) => readyPics.has(s));
+    warmCommunity(); // get the next batch ready in the background
+    if (!photos.length || photos.length < Math.min(4, all.length)) return null;
     const pick = [...photos].sort(() => Math.random() - 0.5).slice(0, photos.length > 6 ? 8 : 6);
     return h("section", {},
       h("div", { class: "title sm retro in" }, c.title || "The Kava Family"),
@@ -391,7 +425,7 @@ function apply(data, fromCache = false) {
   const s = screen();
   document.body.dataset.theme = s.theme === "orange" ? "orange" : "green";
   if (changed.has("ticker") || !tickerDone) paintTicker();
-  if (changed.has("community")) watchDrive();
+  if (changed.has("community")) { watchDrive(); warmCommunity(); }
   preload();
   if (!current) go(1);
   else if (changed.has("config")) { pos = Math.min(pos, s.slides.length - 1); }
@@ -422,7 +456,6 @@ function preload() {
   for (const e of doc("events").items || []) srcs.push(e.image);
   for (const k of ["specials", "signature"]) for (const x of doc(k).items || []) srcs.push(x.image);
   for (const p of doc("products").items || []) srcs.push(...(p.images || [p.image]));
-  for (const p of (doc("community").photos || []).slice(0, 40)) srcs.push(typeof p === "string" ? p : p?.src);
   for (const s of srcs) if (okImage(s) && !preloaded.has(s)) { preloaded.add(s); const i = new Image(); i.decoding = "async"; i.src = s; }
 }
 
@@ -438,8 +471,31 @@ async function loadDrive() {
     const q = encodeURIComponent(`'${folder}' in parents and trashed=false`);
     const d = await (await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&key=${DRIVE_KEY}&fields=files(id,mimeType)&pageSize=300`, { cache: "no-store" })).json();
     if (!Array.isArray(d.files)) throw new Error(d.error?.message || "no files");
-    drivePhotos = d.files.filter((f) => /^image\//.test(f.mimeType || "")).map((f) => `https://lh3.googleusercontent.com/d/${f.id}=w1200`);
+    // =w700 is plenty for a polaroid on a TV and downloads much faster than full size.
+    drivePhotos = d.files.filter((f) => /^image\//.test(f.mimeType || "")).map((f) => `https://lh3.googleusercontent.com/d/${f.id}=w700`);
   } catch (e) { console.warn("[board] community folder:", e.message); /* keep the last list */ }
+  warmCommunity();
+}
+const communityAll = () => [...(doc("community").photos || []).map((p) => (typeof p === "string" ? p : p?.src)), ...drivePhotos].filter(okImage);
+// Downloads and decodes community photos in the background (3 at a time) and keeps up to 24
+// ready in memory. Each time the slide shows, a fresh batch is warmed for next time.
+const readyPics = new Map(); // src → decoded Image (kept so it stays in memory)
+let warming = false;
+async function warmCommunity() {
+  if (warming) return;
+  warming = true;
+  try {
+    const all = communityAll();
+    for (const s of [...readyPics.keys()]) if (!all.includes(s)) readyPics.delete(s);
+    const todo = all.filter((s) => !readyPics.has(s)).sort(() => Math.random() - 0.5).slice(0, 12);
+    const load = async (src) => {
+      const im = new Image(); im.decoding = "async"; im.src = src;
+      try { await im.decode(); readyPics.set(src, im); } catch { /* skip broken files */ }
+    };
+    for (let i = 0; i < todo.length; i += 3) await Promise.all(todo.slice(i, i + 3).map(load));
+    // Keep memory bounded: drop the oldest beyond 24.
+    while (readyPics.size > 24) readyPics.delete(readyPics.keys().next().value);
+  } finally { warming = false; }
 }
 function watchDrive() {
   const folder = doc("community").driveFolder || "";

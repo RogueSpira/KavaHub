@@ -47,3 +47,12 @@ test("only safe picture addresses are shown", () => {
   assert.ok(!T.okImage("javascript:alert(1)"));
   assert.ok(!T.okImage("http://insecure.example/x.png"));
 });
+
+test("featured events: monthly theme and last-of-month", () => {
+  const ev = { featured: true, themes: { "2026-10": "Trailer Trash" } };
+  assert.equal(T.themeFor(ev, new Date(2026, 9, 29)), "Trailer Trash");
+  assert.equal(T.themeFor(ev, new Date(2026, 10, 5)), "");
+  assert.equal(T.isLastOfMonth(new Date(2026, 9, 29)), true);   // last Thursday of Oct 2026
+  assert.equal(T.isLastOfMonth(new Date(2026, 9, 22)), false);
+  assert.equal(T.isFeatured(ev), true);
+});
