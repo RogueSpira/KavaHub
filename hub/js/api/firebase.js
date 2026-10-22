@@ -257,3 +257,8 @@ export async function reviewQuestSub(session, sub, { status, reviewNote, closeQu
   await b.commit();
 }
 export const withdrawQuestSub = (sid) => F.deleteDoc(docRef(`${SQ}/subs/${sid}`));
+// Manage: stars given (or taken back, with a negative number) by hand.
+export const giveStars = (session, { uid, name, stars, reason }) => F.addDoc(col(`${SQ}/subs`), {
+  kind: "manual", questId: "", questTitle: reason || (stars > 0 ? "Bonus star" : "Star taken back"), uid, name, note: "", photo: "",
+  at: F.serverTimestamp(), status: "approved", stars, reviewedBy: session.me.name, reviewedAt: F.serverTimestamp(), reviewNote: "",
+});

@@ -394,3 +394,9 @@ export async function withdrawQuestSub(sid) {
   if (!(questLevel() >= 2 || (s.uid === currentUid && s.status === "pending"))) throw new Error("Missing or insufficient permissions.");
   qsubs.splice(i, 1); changed();
 }
+export async function giveStars(session, { uid, name, stars, reason }) {
+  await wait(120); needQuest(2);
+  qsubs.unshift({ id: id("qs"), kind: "manual", questId: "", questTitle: reason || (stars > 0 ? "Bonus star" : "Star taken back"), uid, name, note: "", photo: "",
+    at: now(), status: "approved", stars, reviewedBy: session.me.name, reviewedAt: now(), reviewNote: "" });
+  changed();
+}

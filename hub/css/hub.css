@@ -535,3 +535,18 @@ button.cl-row:active { transform: scale(.99); }
 .sq-big { display: block; max-width: 100%; max-height: 75vh; margin: 0 auto; border-radius: var(--r-sm); }
 @media (max-width: 560px) { .sq-review-img { width: 100%; } .sq-row { gap: 10px; } .sq-stars { font-size: 20px; } }
 .sq-recent { margin-top: 22px; } .sq-recent summary { cursor: pointer; font-family: var(--f-label); font-weight: 600; color: var(--cream-dim); min-height: 36px; } .sq-recent .rows { margin-top: 10px; }
+
+/* Side Quests: quests and leaderboard side by side (stacked on phones, leaderboard first) */
+.sq-split { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(300px, 1fr); gap: 18px; align-items: start; }
+.sq-h { font-family: var(--f-label); font-size: 20px; margin-bottom: 10px; }
+.sq-leaders { position: sticky; top: 12px; display: grid; gap: 10px; border-color: color-mix(in srgb, var(--gold) 35%, transparent); }
+.sq-leaders-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.sq-leaders-head .sq-h { margin: 0; }
+.sq-leaders .sq-row { background: rgba(7, 20, 23, .35); border: 1.5px solid var(--line); border-radius: var(--r-sm); padding: 10px 12px; width: 100%; text-align: left; color: inherit; font: inherit; }
+.sq-leaders button.sq-row { cursor: pointer; }
+.sq-leaders button.sq-row:active { transform: scale(.99); }
+.sq-leaders .sq-stars { font-size: 20px; }
+.sq-leaders .sq-name { min-width: 70px; }
+.sq-rule { margin-top: 2px; }
+.sq-leaders > .btn { justify-self: start; }
+@media (max-width: 860px) { .sq-split { grid-template-columns: 1fr; } .sq-leaders { position: static; order: -1; } }

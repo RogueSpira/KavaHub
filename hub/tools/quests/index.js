@@ -16,20 +16,20 @@ const GREEN_EVERY = 5;
 export function mount(el, ctx) {
   const manage = ctx.level >= 2;
   const view = ctx.sub[0] || "board";
-  let quests = null, subs = null, failed = false;
+  let quests = null, subs = null, failed = false, people = null, period = "month";
   const pane = h("section", { class: "pane" });
   const nav = h("nav", { class: "tabs", role: "tablist" });
   add(el, nav, pane);
 
-  const views = { board, leaders, mine, review: manage ? review : null, edit: manage ? editor : null };
+  const views = { board, leaders: board, mine, review: manage ? review : null, edit: manage ? editor : null };
   const paintView = (views[view] || board)();
   function paintNav() {
     const pending = (subs || []).filter((s) => s.status === "pending").length;
-    const tabs = [["board", "Quests"], ["leaders", "Leaderboard"], ["mine", "My stars"]];
+    const tabs = [["board", "Quests & Leaderboard"], ["mine", "My stars"]];
     if (manage) tabs.push(["review", pending ? `Review (${pending})` : "Review"], ["edit", "Edit quests"]);
     clear(nav);
     for (const [id, label] of tabs) add(nav, h("button", { type: "button", role: "tab", "aria-selected": String(view === id),
-      class: `tab${view === id ? " on" : ""}${id === "review" && pending ? " sq-tab-alert" : ""}`,
+      class: `tab${view === id || (id === "board" && view === "leaders") ? " on" : ""}${id === "review" && pending ? " sq-tab-alert" : ""}`,
       onclick: () => ctx.navigate(id === "board" ? ctx.base : `${ctx.base}/${id}`) }, label));
   }
   const repaint = () => { paintNav(); paintView(); };
@@ -37,6 +37,8 @@ export function mount(el, ctx) {
   const stops = [
     ctx.api.watchQuests((list, err) => { if (err) failed = true; quests = list || []; repaint(); }),
     ctx.api.watchQuestSubs((list, err) => { if (err) failed = true; subs = list || []; repaint(); }),
+    // Managers get the full staff list so they can give stars to anyone.
+    manage ? ctx.api.watchUsers((list) => { people = (list || []).filter((u) => u.active !== false); repaint(); }) : () => {},
   ];
   return () => stops.forEach((s) => s());
 
@@ -58,13 +60,13 @@ export function mount(el, ctx) {
       if (notReady()) return;
       const open = quests.filter((q) => q.open);
       const ready = open.filter((q) => !isLocked(q)), locked = open.filter(isLocked).sort((a, b) => a.unlockOn.localeCompare(b.unlockOn));
-      const mine = starsFor(subs.filter((s) => s.uid === myUid() && s.status === "approved").length);
-      add(clear(pane),
-        h("div", { class: "card sq-me" }, h("span", { class: "muted" }, "Your stars"), mine.el,
-          h("button", { class: "btn small ghost", type: "button", onclick: () => ctx.navigate(`${ctx.base}/leaders`) }, "Leaderboard ›")),
-        ready.length ? h("div", { class: "sq-list" }, ready.map(questCard))
-          : h("div", { class: "card empty-card" }, h("p", {}, "No side quests right now."), manage ? h("button", { class: "btn primary", type: "button", onclick: () => ctx.navigate(`${ctx.base}/edit`) }, "Add quests") : null),
-        locked.length ? [h("h3", { class: "tv-h3" }, "🔒 Coming up"), h("div", { class: "sq-list" }, locked.map(questCard))] : null);
+      add(clear(pane), h("div", { class: "sq-split" },
+        h("div", { class: "sq-col-quests" },
+          h("h3", { class: "sq-h" }, "🗺️ Side Quests"),
+          ready.length ? h("div", { class: "sq-list" }, ready.map(questCard))
+            : h("div", { class: "card empty-card" }, h("p", {}, "No side quests right now."), manage ? h("button", { class: "btn primary", type: "button", onclick: () => ctx.navigate(`${ctx.base}/edit`) }, "Add quests") : null),
+          locked.length ? [h("h3", { class: "tv-h3" }, "🔒 Coming up"), h("div", { class: "sq-list" }, locked.map(questCard))] : null),
+        leaderPanel()));
     };
   }
   function questCard(q) {
@@ -118,33 +120,53 @@ export function mount(el, ctx) {
     } }] });
   }
 
-  /* =========================== LEADERBOARD =========================== */
-  function leaders() {
-    let period = "month";
-    return () => {
-      if (notReady()) return;
-      const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
-      const counted = subs.filter((s) => s.status === "approved" && (period === "all" || (s.at && s.at >= monthStart)));
-      const by = new Map();
-      for (const s of counted) {
-        const r = by.get(s.uid) || { uid: s.uid, name: s.name, n: 0, last: s.at };
-        r.n++; by.set(s.uid, r);
-      }
-      const rows = [...by.values()].sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
-      const medal = ["🥇", "🥈", "🥉"];
-      let place = 0, prev = null;
-      add(clear(pane),
-        h("div", { class: "pane-head" }, h("p", { class: "muted" }, `Every approved quest is a ★. Every ${GREEN_EVERY} ★ turn into a green ★.`),
-          seg([{ value: "month", label: "This month" }, { value: "all", label: "All time" }], period, (v) => { period = v; paintView(); }, { small: true })),
-        rows.length ? h("div", { class: "sq-board" }, rows.map((r, i) => {
-          if (r.n !== prev) { place = i + 1; prev = r.n; }
-          const st = starsFor(r.n);
-          return h("div", { class: `card sq-row${r.uid === myUid() ? " me" : ""}${place === 1 ? " first" : ""}` },
-            h("span", { class: "sq-place" }, medal[place - 1] || `#${place}`),
-            h("span", { class: "sq-name" }, r.name),
-            st.el, h("span", { class: "sq-total" }, r.n));
-        })) : h("p", { class: "muted empty" }, period === "month" ? "No stars yet this month. First one takes the lead!" : "No stars yet."));
-    };
+  /* =========================== LEADERBOARD (beside the quests) =========================== */
+  function leaderPanel() {
+    const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+    const by = new Map();
+    for (const s of subs) {
+      if (s.status !== "approved" || (period === "month" && !(s.at && s.at >= monthStart))) continue;
+      const r = by.get(s.uid) || { uid: s.uid, name: s.name, n: 0 };
+      r.n += starValue(s); by.set(s.uid, r);
+    }
+    const rows = [...by.values()].filter((r) => r.n > 0).sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
+    const medal = ["🥇", "🥈", "🥉"];
+    let place = 0, prev = null;
+    return h("aside", { class: "card sq-leaders" },
+      h("div", { class: "sq-leaders-head" }, h("h3", { class: "sq-h" }, "🏆 Leaderboard"),
+        seg([{ value: "month", label: "This month" }, { value: "all", label: "All time" }], period, (v) => { period = v; paintView(); }, { small: true })),
+      rows.length ? h("div", { class: "sq-board" }, rows.map((r, i) => {
+        if (r.n !== prev) { place = i + 1; prev = r.n; }
+        const st = starsFor(r.n);
+        const attrs = { class: `sq-row${r.uid === myUid() ? " me" : ""}${place === 1 ? " first" : ""}` };
+        const kids = [h("span", { class: "sq-place" }, medal[place - 1] || `#${place}`),
+          h("span", { class: "sq-name" }, r.name), st.el, h("span", { class: "sq-total" }, r.n)];
+        return manage ? h("button", { type: "button", ...attrs, title: `Give ${r.name} stars`, onclick: () => giveStars(r.uid) }, kids) : h("div", attrs, kids);
+      })) : h("p", { class: "muted small sq-empty" }, period === "month" ? "No stars yet this month. First one takes the lead!" : "No stars yet."),
+      h("p", { class: "muted small sq-rule" }, `Every approved quest is a ★. Every ${GREEN_EVERY} ★ turn into a green ★.`),
+      manage ? h("button", { class: "btn small", type: "button", onclick: () => giveStars(null) }, "＋ Give stars") : null);
+  }
+  // Manage: add (or take away) stars by hand, with a reason everyone sees in their history.
+  async function giveStars(uid) {
+    const list = people || [];
+    const known = new Map(list.map((u) => [u.uid, u.name]));
+    for (const s of subs) if (!known.has(s.uid)) known.set(s.uid, s.name); // fallback if the staff list can't be read
+    if (!known.size) { ctx.toast("No one to give stars to yet.", "err"); return; }
+    const who = h("select", { class: "input" }, [...known].sort((a, b) => a[1].localeCompare(b[1])).map(([id, n]) => h("option", { value: id, selected: id === uid }, n)));
+    let amount = 1;
+    const reason = h("input", { class: "input", maxlength: "100", placeholder: "e.g. Stayed late to help with the event" });
+    await modal({ title: "Give stars", body: h("div", { class: "form" },
+      field("Who", who),
+      field("Stars", seg([1, 2, 3, 5, -1].map((n) => ({ value: n, label: n > 0 ? `+${n} ★` : `${n} ★`, cls: n < 0 ? "danger" : "" })), amount, (v) => { amount = v; }),
+        "Use −1 to take one back."),
+      field("Reason", reason, "They'll see this in My stars.")),
+    actions: [{ label: "Cancel", kind: "ghost", value: false }, { label: "Save", kind: "primary", onClick: async () => {
+      const name = known.get(who.value);
+      await ctx.api.giveStars(ctx.session(), { uid: who.value, name, stars: amount, reason: reason.value.trim() });
+      ctx.log("Gave stars", `${name}: ${amount > 0 ? "+" : ""}${amount}${reason.value.trim() ? ` (${reason.value.trim()})` : ""}`);
+      ctx.toast(amount > 0 ? `${"★".repeat(Math.min(amount, 5))} for ${name}!` : `Took a star from ${name}`);
+      return true;
+    } }] });
   }
 
   /* =========================== MY STARS =========================== */
@@ -152,20 +174,21 @@ export function mount(el, ctx) {
     return () => {
       if (notReady()) return;
       const my = subs.filter((s) => s.uid === myUid());
-      const n = my.filter((s) => s.status === "approved").length;
+      const n = Math.max(0, my.reduce((t, s) => t + starValue(s), 0));
       const st = starsFor(n);
       add(clear(pane),
-        h("div", { class: "card sq-me big" }, h("span", {}, myName()), st.el, h("span", { class: "muted small" }, `${n} quest${n === 1 ? "" : "s"} approved · ${GREEN_EVERY - (n % GREEN_EVERY)} more for your next green ★`)),
+        h("div", { class: "card sq-me big" }, h("span", {}, myName()), st.el, h("span", { class: "muted small" }, `${n} star${n === 1 ? "" : "s"} · ${GREEN_EVERY - (n % GREEN_EVERY)} more for your next green ★`)),
         my.length ? h("div", { class: "sq-list" }, my.map((s) => h("div", { class: "card sq-sub" },
           s.photo ? h("img", { class: "sq-thumb", src: s.photo, alt: "", onclick: () => bigPhoto(s) }) : null,
           h("div", { class: "sq-quest-main" },
-            h("div", { class: "sq-quest-title" }, s.questTitle),
-            h("span", { class: "muted small" }, timeAgo(s.at)),
+            h("div", { class: "sq-quest-title" }, s.kind === "manual" ? `🎁 ${s.questTitle}` : s.questTitle),
+            h("span", { class: "muted small" }, s.kind === "manual" ? `From ${s.reviewedBy} · ${timeAgo(s.at)}` : timeAgo(s.at)),
             s.status === "rejected" && s.reviewNote ? h("p", { class: "sq-review-note" }, `${s.reviewedBy}: ${s.reviewNote}`) : null),
           statusChip(s)))) : h("p", { class: "muted empty" }, "Nothing signed off yet. Check the Quests tab!"));
     };
   }
   function statusChip(s) {
+    if (s.kind === "manual") return h("span", { class: `chip ${s.stars < 0 ? "chip-off" : "chip-ok"}` }, `${s.stars > 0 ? "+" : ""}${s.stars} ★`);
     if (s.status === "approved") return h("span", { class: "chip chip-ok" }, "★ Approved");
     if (s.status === "rejected") return h("span", { class: "chip chip-off" }, "Not yet");
     return h("span", { class: "chip chip-soon" }, "Waiting");
@@ -190,12 +213,17 @@ export function mount(el, ctx) {
                 h("button", { class: "btn primary", type: "button", onclick: () => decide(s, q, "approved") }, "★ Approve"),
                 h("button", { class: "btn ghost", type: "button", onclick: () => decide(s, q, "rejected") }, "Not yet"))));
         })) : h("div", { class: "card empty-card" }, h("p", {}, "Nothing waiting for review. 🎉")),
-        recent.length ? h("details", { class: "sq-recent" }, h("summary", {}, "Recently reviewed (change a decision)"), h("div", { class: "rows" }, recent.map((s) => h("div", { class: "row" },
-          h("span", { class: "row-main" }, h("span", { class: "row-title" }, `${s.name} — ${s.questTitle}`),
-            h("span", { class: "row-sub" }, `${s.status === "approved" ? "Approved" : "Sent back"} by ${s.reviewedBy} · ${timeAgo(s.reviewedAt)}`)),
+        recent.length ? h("details", { class: "sq-recent" }, h("summary", {}, "Recently reviewed & stars given (change or undo)"), h("div", { class: "rows" }, recent.map((s) => h("div", { class: "row" },
+          h("span", { class: "row-main" }, h("span", { class: "row-title" }, `${s.name} — ${s.kind === "manual" ? `🎁 ${s.questTitle}` : s.questTitle}`),
+            h("span", { class: "row-sub" }, `${s.kind === "manual" ? "Given" : s.status === "approved" ? "Approved" : "Sent back"} by ${s.reviewedBy} · ${timeAgo(s.reviewedAt)}`)),
           statusChip(s),
-          h("button", { class: "btn small ghost", type: "button", onclick: () => decide(s, quests.find((x) => x.id === s.questId), s.status === "approved" ? "rejected" : "approved") },
-            s.status === "approved" ? "Change to Not yet" : "Change to Approved"))))) : null);
+          s.kind === "manual"
+            ? h("button", { class: "btn small ghost", type: "button", onclick: async () => {
+              if (!(await confirm("Undo these stars?", `${s.name} loses the ${s.stars > 0 ? "+" : ""}${s.stars} ★ from “${s.questTitle}”.`, "Undo"))) return;
+              try { await ctx.api.withdrawQuestSub(s.id); ctx.log("Undid stars", `${s.name}: ${s.questTitle}`); ctx.toast("Undone"); } catch (e) { ctx.toast(e.message, "err"); }
+            } }, "Undo")
+            : h("button", { class: "btn small ghost", type: "button", onclick: () => decide(s, quests.find((x) => x.id === s.questId), s.status === "approved" ? "rejected" : "approved") },
+              s.status === "approved" ? "Change to Not yet" : "Change to Approved"))))) : null);
     };
   }
   async function decide(s, q, status) {
@@ -266,6 +294,9 @@ export function mount(el, ctx) {
     actions });
   }
 }
+
+// How many stars a record is worth: approved quest = 1; a hand-given entry = its own number (can be negative).
+export const starValue = (s) => (s.status !== "approved" ? 0 : Number.isInteger(s.stars) ? s.stars : 1);
 
 // Stars: every approved quest is a gold ★; each 5 gold become 1 green ★.
 export function starsFor(n) {

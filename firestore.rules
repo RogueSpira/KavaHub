@@ -40,7 +40,8 @@ service cloud.firestore {
 
       // People: you can read yourself; admins can read everyone. Changes go through functions.
       match /users/{uid} {
-        allow read: if member(loc) && (uid == request.auth.uid || can(loc, 'admin', 2));
+        // Managers on Side Quests can see the staff list too, to give stars by hand.
+        allow read: if member(loc) && (uid == request.auth.uid || can(loc, 'admin', 2) || can(loc, 'quests', 2));
         allow write: if false;
       }
 
@@ -151,7 +152,18 @@ service cloud.firestore {
       match /tools-data/quests/subs/{id} {
         function questPath(qid) { return /databases/$(database)/documents/locations/$(loc)/tools-data/quests/items/$(qid); }
         allow read: if can(loc, 'quests', 1);
-        allow create: if can(loc, 'quests', 1)
+        function userPathOf(uid) { return /databases/$(database)/documents/locations/$(loc)/users/$(uid); }
+        // Manage can also give (or take back) stars by hand: an already-approved record with a star count.
+        function validManual(d) {
+          return d.keys().hasOnly(['kind', 'questId', 'questTitle', 'uid', 'name', 'note', 'photo', 'at', 'status', 'stars', 'reviewedBy', 'reviewedAt', 'reviewNote'])
+            && d.kind == 'manual' && d.status == 'approved'
+            && d.stars is int && d.stars != 0 && d.stars >= -20 && d.stars <= 20
+            && d.uid is string && exists(userPathOf(d.uid)) && d.name == get(userPathOf(d.uid)).data.name
+            && d.questId == '' && d.note == '' && d.photo == '' && d.reviewNote == ''
+            && d.questTitle is string && d.questTitle.size() > 0 && d.questTitle.size() <= 120
+            && d.at == request.time && d.reviewedAt == request.time && d.reviewedBy == me(loc).name;
+        }
+        allow create: if (can(loc, 'quests', 2) && validManual(request.resource.data)) || (can(loc, 'quests', 1)
           && request.resource.data.keys().hasOnly(['questId', 'questTitle', 'uid', 'name', 'note', 'photo', 'at', 'status'])
           && request.resource.data.uid == request.auth.uid
           && request.resource.data.name == me(loc).name
@@ -166,7 +178,7 @@ service cloud.firestore {
           && get(questPath(request.resource.data.questId)).data.open == true
           // Quests set to unlock on a date can't be signed off before then.
           && (get(questPath(request.resource.data.questId)).data.get('unlockAt', null) == null
-              || get(questPath(request.resource.data.questId)).data.get('unlockAt', null) <= request.time);
+              || get(questPath(request.resource.data.questId)).data.get('unlockAt', null) <= request.time));
         allow update: if can(loc, 'quests', 2)
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'reviewNote', 'reviewedBy', 'reviewedAt'])
           && request.resource.data.status in ['approved', 'rejected']
