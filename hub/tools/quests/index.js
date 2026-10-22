@@ -4,7 +4,7 @@
 //   #/tool/quests/mine       your sign-offs and stars
 //   #/tool/quests/review     Manage: approve or send back sign-offs
 //   #/tool/quests/edit       Manage: add, change, close quests
-// Each approved sign-off = 1 gold star. Every 5 gold stars become 1 green star.
+// Each approved sign-off earns the quest's stars (1 unless set higher). Every 5 blue stars become 1 green star.
 // A quest can be set to unlock on a date; until then it shows as "Coming up" and can't be signed off.
 import { h, clear, modal, confirm, field, seg, timeAgo } from "../../js/ui.js";
 import { shrinkImage } from "../../js/images.js";
@@ -82,7 +82,7 @@ export function mount(el, ctx) {
     else action = h("button", { class: "btn primary", type: "button", onclick: () => signOff(q) }, "✓ I did it");
     return h("article", { class: `card sq-quest${locked ? " locked" : ""}` },
       h("div", { class: "sq-quest-main" },
-        h("div", { class: "sq-quest-title" }, q.title, q.repeat ? h("span", { class: "chip chip-ok" }, "Repeats") : null),
+        h("div", { class: "sq-quest-title" }, q.title, worthChip(q.stars), q.repeat ? h("span", { class: "chip chip-ok" }, "Repeats") : null),
         q.details ? h("p", { class: "sq-quest-details" }, q.details) : null,
         q.repeat && last ? h("p", { class: "muted small" }, `Last done by ${last.name} · ${timeAgo(last.at)}`) : null),
       action);
@@ -111,7 +111,7 @@ export function mount(el, ctx) {
     paintPic();
     await modal({ title: q.title, body: h("div", { class: "form" },
       q.details ? h("p", { class: "muted" }, q.details) : null,
-      field("Photo", pic, "Show it off. A manager will check it before you get your star."), field("Note", note)),
+      field("Photo", pic, `Show it off. A manager will check it before you get your ${worth(q.stars) > 1 ? `${worth(q.stars)} stars` : "star"}.`), field("Note", note)),
     actions: [{ label: "Cancel", kind: "ghost", value: false }, { label: "Sign off", kind: "primary", onClick: async () => {
       if (uploading) throw new Error("Wait for the photo to finish uploading.");
       await ctx.api.submitQuest(ctx.session(), q, { note: note.value.trim(), photo });
@@ -143,7 +143,7 @@ export function mount(el, ctx) {
           h("span", { class: "sq-name" }, r.name), st.el, h("span", { class: "sq-total" }, r.n)];
         return manage ? h("button", { type: "button", ...attrs, title: `Give ${r.name} stars`, onclick: () => giveStars(r.uid) }, kids) : h("div", attrs, kids);
       })) : h("p", { class: "muted small sq-empty" }, period === "month" ? "No stars yet this month. First one takes the lead!" : "No stars yet."),
-      h("p", { class: "muted small sq-rule" }, `Every approved quest is a ★. Every ${GREEN_EVERY} ★ turn into a green ★.`),
+      h("p", { class: "muted small sq-rule" }, `Finish a quest, earn its stars. Every ${GREEN_EVERY} blue ★ turn into a green ★.`),
       manage ? h("button", { class: "btn small", type: "button", onclick: () => giveStars(null) }, "＋ Give stars") : null);
   }
   // Manage: add (or take away) stars by hand, with a reason everyone sees in their history.
@@ -189,7 +189,7 @@ export function mount(el, ctx) {
   }
   function statusChip(s) {
     if (s.kind === "manual") return h("span", { class: `chip ${s.stars < 0 ? "chip-off" : "chip-ok"}` }, `${s.stars > 0 ? "+" : ""}${s.stars} ★`);
-    if (s.status === "approved") return h("span", { class: "chip chip-ok" }, "★ Approved");
+    if (s.status === "approved") return h("span", { class: "chip chip-ok" }, `${"★".repeat(Math.min(worth(s.stars), 5))} Approved`);
     if (s.status === "rejected") return h("span", { class: "chip chip-off" }, "Not yet");
     return h("span", { class: "chip chip-soon" }, "Waiting");
   }
@@ -206,7 +206,7 @@ export function mount(el, ctx) {
           return h("article", { class: "card sq-review" },
             s.photo ? h("img", { class: "sq-review-img", src: s.photo, alt: "", onclick: () => bigPhoto(s) }) : h("div", { class: "sq-review-img none" }, "No photo"),
             h("div", { class: "sq-quest-main" },
-              h("div", { class: "sq-quest-title" }, s.questTitle),
+              h("div", { class: "sq-quest-title" }, s.questTitle, worthChip(s.stars)),
               h("span", { class: "muted small" }, `${s.name} · ${timeAgo(s.at)}`),
               s.note ? h("p", { class: "sugg-quote" }, s.note) : null,
               h("div", { class: "sq-actions" },
@@ -239,7 +239,7 @@ export function mount(el, ctx) {
       // Approving a one-time quest takes it off the board.
       await ctx.api.reviewQuestSub(ctx.session(), s, { status, reviewNote, closeQuest: status === "approved" && q && !q.repeat && q.open });
       ctx.log(status === "approved" ? "Approved side quest" : "Sent back side quest", `${s.name}: ${s.questTitle}`);
-      ctx.toast(status === "approved" ? `★ Star for ${s.name}!` : `Sent back to ${s.name}`);
+      ctx.toast(status === "approved" ? `${"★".repeat(Math.min(worth(s.stars), 5))} for ${s.name}!` : `Sent back to ${s.name}`);
     } catch (e) { ctx.toast(e.message || "Couldn't save.", "err"); }
   }
   function bigPhoto(s) {
@@ -259,7 +259,7 @@ export function mount(el, ctx) {
           return h("button", { type: "button", class: `row${q.open ? "" : " row-off"}`, onclick: () => editQuest(q) },
             h("span", { class: "row-main" },
               h("span", { class: "row-title" }, q.title,
-                q.repeat ? h("span", { class: "chip chip-ok" }, "Repeats") : null,
+                worthChip(q.stars), q.repeat ? h("span", { class: "chip chip-ok" }, "Repeats") : null,
                 !q.open ? h("span", { class: "chip chip-off" }, done ? "Done" : "Closed") : null,
                 q.open && isLocked(q) ? h("span", { class: "chip chip-soon" }, `Unlocks ${unlockLabel(q)}`) : null),
               h("span", { class: "row-sub" }, [q.details, done ? `${done}× approved` : ""].filter(Boolean).join(" · "))),
@@ -271,7 +271,7 @@ export function mount(el, ctx) {
     const title = h("input", { class: "input", maxlength: "120", value: q?.title || "", placeholder: "e.g. Deep clean the walk-in fridge" });
     const details = h("textarea", { class: "input textarea", rows: "3", maxlength: "1000", placeholder: "What 'done' looks like (optional)" }, q?.details || "");
     const unlock = h("input", { class: "input", type: "date", value: q?.unlockOn || "" });
-    let repeat = !!q?.repeat, open = q ? q.open : true;
+    let repeat = !!q?.repeat, open = q ? q.open : true, stars = worth(q?.stars);
     const actions = [];
     if (q) actions.push({ label: "Delete", kind: "ghost", onClick: async () => {
       if (!(await confirm(`Delete “${q.title}”?`, "It comes off the board. Stars already earned stay.", "Delete"))) return false;
@@ -281,12 +281,13 @@ export function mount(el, ctx) {
     actions.push({ label: "Cancel", kind: "ghost", value: false }, { label: q ? "Save" : "Add quest", kind: "primary", onClick: async () => {
       const t = title.value.trim();
       if (!t) throw new Error("Give the quest a name.");
-      await ctx.api.saveQuest(ctx.session(), q?.id, { title: t, details: details.value.trim(), repeat, open, unlockOn: unlock.value || "" });
+      await ctx.api.saveQuest(ctx.session(), q?.id, { title: t, details: details.value.trim(), repeat, open, stars, unlockOn: unlock.value || "" });
       ctx.log(q ? "Edited side quest" : "Added side quest", t); ctx.toast(q ? "Saved" : "Quest added");
       return true;
     } });
     await modal({ title: q ? "Edit quest" : "New quest", body: h("div", { class: "form" },
       field("Quest", title), field("Details", details),
+      field("Worth", seg([1, 2, 3, 4, 5].map((n) => ({ value: n, label: `${n} ★` })), stars, (v) => { stars = v; }), "Harder jobs can be worth more. Most are 1."),
       field("Type", seg([{ value: false, label: "One time" }, { value: true, label: "Repeats" }], repeat, (v) => { repeat = v; }),
         "One time: off the board once approved. Repeats: stays up and can earn stars again and again."),
       field("Unlocks on (optional)", unlock, "Shows as “Coming up” until this date, e.g. taking down holiday decorations. Leave blank to open now."),
@@ -295,15 +296,20 @@ export function mount(el, ctx) {
   }
 }
 
-// How many stars a record is worth: approved quest = 1; a hand-given entry = its own number (can be negative).
+// How many stars a record is worth: the quest's stars when it was signed off (1 for older ones);
+// a hand-given entry = its own number (can be negative).
 export const starValue = (s) => (s.status !== "approved" ? 0 : Number.isInteger(s.stars) ? s.stars : 1);
+// A quest's worth: 1–5 stars, 1 if not set.
+export const worth = (n) => (Number.isInteger(n) && n >= 1 ? Math.min(n, 5) : 1);
+// Small "★★★" tag for quests worth more than 1.
+export const worthChip = (n) => (worth(n) > 1 ? h("span", { class: "chip sq-worth" }, `${"★".repeat(worth(n))} ${worth(n)} stars`) : null);
 
-// Stars: every approved quest is a gold ★; each 5 gold become 1 green ★.
+// Stars: blue ★ for each one earned; every 5 blue become 1 green ★.
 export function starsFor(n) {
-  const green = Math.floor(n / GREEN_EVERY), gold = n % GREEN_EVERY;
-  const el = h("span", { class: "sq-stars", "aria-label": `${green} green stars and ${gold} gold stars` },
+  const green = Math.floor(n / GREEN_EVERY), blue = n % GREEN_EVERY;
+  const el = h("span", { class: "sq-stars", "aria-label": `${green} green stars and ${blue} blue stars` },
     green > 6 ? [h("span", { class: "star green" }, "★"), h("span", { class: "star-x" }, `×${green}`)] : Array.from({ length: green }, () => h("span", { class: "star green" }, "★")),
-    Array.from({ length: gold }, () => h("span", { class: "star gold" }, "★")),
+    Array.from({ length: blue }, () => h("span", { class: "star blue" }, "★")),
     !n ? h("span", { class: "star empty" }, "☆") : null);
-  return { el, green, gold };
+  return { el, green, blue };
 }

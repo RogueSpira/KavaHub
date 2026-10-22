@@ -503,7 +503,8 @@ button.cl-row:active { transform: scale(.99); }
 .sq-me.big > span:first-child { font-family: var(--f-label); font-weight: 700; font-size: 22px; }
 .sq-me.big .sq-stars { font-size: 34px; }
 .sq-stars { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 2px; font-size: 24px; line-height: 1; }
-.star.gold { color: var(--gold); text-shadow: 0 0 10px rgba(255, 207, 58, .55); }
+.star.blue { color: #3AA8FF; text-shadow: 0 0 10px rgba(58, 168, 255, .6); }
+.sq-worth { background: rgba(58, 168, 255, .16); color: #6CC0FF; letter-spacing: 0; }
 .star.green { color: var(--green); text-shadow: 0 0 12px rgba(56, 212, 48, .7); font-size: 1.15em; }
 .star.empty { color: var(--muted); }
 .star-x { font-family: var(--f-label); font-weight: 700; font-size: .7em; color: var(--green); margin: 0 6px 0 2px; }

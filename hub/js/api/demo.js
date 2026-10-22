@@ -344,6 +344,7 @@ if (!fresh) {
   const uidOf = (n) => Object.values(store.users).find((u) => u.name === n)?.uid;
   const q = (title, details, repeat = false, open = true) => { const x = { id: id("q"), title, details, repeat, open, createdAt: days(20), createdBy: "Rogue", updatedAt: days(20), updatedBy: "Rogue" }; quests.push(x); return x; };
   const fridge = q("Deep clean the walk-in fridge", "Pull everything out, wipe shelves and walls, check dates on the way back in.");
+  fridge.stars = 3;
   const under = q("Sweep under the bar coolers", "Pull the kick plates and get everything underneath. Mop after.", true);
   q("Organize the dry storage shelves", "Group like with like, label the bins, oldest stock to the front.");
   q("Wipe down all the barstool legs", "Every stool, every leg. Degreaser + rag.", true);
@@ -354,7 +355,7 @@ if (!fresh) {
   for (let i = 0; i < 7; i++) sub(under, i % 3 ? "Daniel" : "Wheatyn", 18 - i * 2, "approved");
   sub(art, "Josh", 12, "approved"); sub(under, "Josh", 3, "approved"); sub(under, "Daniel", 1, "approved");
   for (let i = 0; i < 4; i++) sub(under, "Daniel", 30 + i, "approved");
-  sub(fridge, "Wheatyn", 0.2, "pending", { note: "Threw out two expired syrups.", photo: "/board/assets/drinks/upnext.jpg" });
+  sub(fridge, "Wheatyn", 0.2, "pending", { note: "Threw out two expired syrups.", photo: "/board/assets/drinks/upnext.jpg", stars: 3 });
   sub(under, "Josh", 2, "rejected", { reviewNote: "Still a lot of dust behind the second cooler." });
 }
 const meName = () => me()?.name;
@@ -362,9 +363,9 @@ const questLevel = () => { const u = me(); return !u ? 0 : u.roleId === "owner" 
 const needQuest = (lvl) => { if (questLevel() < lvl) throw new Error("Missing or insufficient permissions."); };
 export function watchQuests(cb) { return watch(() => cb(structuredClone(quests))); }
 const unlockAtOf = (key) => { if (!key) return null; const [y, m, d] = key.split("-").map(Number); return new Date(y, m - 1, d, 5); };
-export async function saveQuest(session, qid, { title, details, repeat, open, unlockOn = "" }) {
+export async function saveQuest(session, qid, { title, details, repeat, open, stars = 1, unlockOn = "" }) {
   await wait(120); needQuest(2);
-  const data = { title, details, repeat: !!repeat, open: open !== false, unlockOn, unlockAt: unlockAtOf(unlockOn), updatedAt: now(), updatedBy: meName() };
+  const data = { title, details, repeat: !!repeat, open: open !== false, stars, unlockOn, unlockAt: unlockAtOf(unlockOn), updatedAt: now(), updatedBy: meName() };
   if (qid) { Object.assign(quests.find((x) => x.id === qid), data); changed(); return qid; }
   const x = { id: id("q"), ...data, createdAt: now(), createdBy: meName() };
   quests.unshift(x); changed(); return x.id;
@@ -377,7 +378,7 @@ export async function submitQuest(session, quest, { note, photo }) {
   const qq = quests.find((x) => x.id === quest.id);
   if (!qq?.open) throw new Error("That quest is closed.");
   if (qq.unlockAt && qq.unlockAt > now()) throw new Error("Missing or insufficient permissions.");
-  qsubs.unshift({ id: id("qs"), questId: quest.id, questTitle: quest.title, uid: session.uid, name: session.me.name, note: note || "", photo: photo || "", at: now(), status: "pending" });
+  qsubs.unshift({ id: id("qs"), questId: quest.id, questTitle: quest.title, uid: session.uid, name: session.me.name, note: note || "", photo: photo || "", at: now(), status: "pending", stars: qq.stars || 1 });
   changed();
 }
 export async function reviewQuestSub(session, sub, { status, reviewNote, closeQuest }) {

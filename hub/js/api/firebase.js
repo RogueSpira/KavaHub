@@ -232,8 +232,8 @@ export function watchQuests(cb) {
 }
 // unlockOn: "2026-11-01" or "" — opens at 5 AM that day (the start of the business day).
 const unlockAtOf = (key) => { if (!key) return null; const [y, m, d] = key.split("-").map(Number); return F.Timestamp.fromDate(new Date(y, m - 1, d, 5)); };
-export async function saveQuest(session, qid, { title, details, repeat, open, unlockOn = "" }) {
-  const data = { title, details, repeat: !!repeat, open: open !== false, unlockOn, unlockAt: unlockAtOf(unlockOn), updatedAt: F.serverTimestamp(), updatedBy: session.me.name };
+export async function saveQuest(session, qid, { title, details, repeat, open, stars = 1, unlockOn = "" }) {
+  const data = { title, details, repeat: !!repeat, open: open !== false, stars, unlockOn, unlockAt: unlockAtOf(unlockOn), updatedAt: F.serverTimestamp(), updatedBy: session.me.name };
   if (qid) { await F.updateDoc(docRef(`${SQ}/items/${qid}`), data); return qid; }
   const ref = await F.addDoc(col(`${SQ}/items`), { ...data, createdAt: F.serverTimestamp(), createdBy: session.me.name });
   return ref.id;
@@ -247,7 +247,7 @@ export function watchQuestSubs(cb) {
 }
 export const submitQuest = (session, quest, { note, photo }) => F.addDoc(col(`${SQ}/subs`), {
   questId: quest.id, questTitle: quest.title, uid: session.uid, name: session.me.name,
-  note: note || "", photo: photo || "", at: F.serverTimestamp(), status: "pending",
+  note: note || "", photo: photo || "", at: F.serverTimestamp(), status: "pending", stars: quest.stars || 1,
 });
 // Approve or send back. Approving a one-time quest also takes it off the board.
 export async function reviewQuestSub(session, sub, { status, reviewNote, closeQuest }) {
