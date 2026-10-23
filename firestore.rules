@@ -158,7 +158,7 @@ service cloud.firestore {
         function validManual(d) {
           return d.keys().hasOnly(['kind', 'questId', 'questTitle', 'uid', 'name', 'note', 'photo', 'at', 'status', 'stars', 'reviewedBy', 'reviewedAt', 'reviewNote'])
             && d.kind == 'manual' && d.status == 'approved'
-            && d.stars is int && d.stars != 0 && d.stars >= -20 && d.stars <= 20
+            && d.stars is int && d.stars != 0 && d.stars >= -500 && d.stars <= 500
             && d.uid is string && exists(userPathOf(d.uid)) && d.name == get(userPathOf(d.uid)).data.name
             && d.questId == '' && d.note == '' && d.photo == '' && d.reviewNote == ''
             && d.questTitle is string && d.questTitle.size() > 0 && d.questTitle.size() <= 120

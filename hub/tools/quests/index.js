@@ -21,12 +21,12 @@ export function mount(el, ctx) {
   const nav = h("nav", { class: "tabs", role: "tablist" });
   add(el, nav, pane);
 
-  const views = { board, leaders: board, mine, review: manage ? review : null, edit: manage ? editor : null };
+  const views = { board, leaders: board, mine, review: manage ? review : null, stars: manage ? starsView : null, edit: manage ? editor : null };
   const paintView = (views[view] || board)();
   function paintNav() {
     const pending = (subs || []).filter((s) => s.status === "pending").length;
     const tabs = [["board", "Quests & Leaderboard"], ["mine", "My stars"]];
-    if (manage) tabs.push(["review", pending ? `Review (${pending})` : "Review"], ["edit", "Edit quests"]);
+    if (manage) tabs.push(["review", pending ? `Review (${pending})` : "Review"], ["stars", "Stars"], ["edit", "Edit quests"]);
     clear(nav);
     for (const [id, label] of tabs) add(nav, h("button", { type: "button", role: "tab", "aria-selected": String(view === id),
       class: `tab${view === id || (id === "board" && view === "leaders") ? " on" : ""}${id === "review" && pending ? " sq-tab-alert" : ""}`,
@@ -144,29 +144,103 @@ export function mount(el, ctx) {
         return manage ? h("button", { type: "button", ...attrs, title: `Give ${r.name} stars`, onclick: () => giveStars(r.uid) }, kids) : h("div", attrs, kids);
       })) : h("p", { class: "muted small sq-empty" }, period === "month" ? "No stars yet this month. First one takes the lead!" : "No stars yet."),
       h("p", { class: "muted small sq-rule" }, `Finish a quest, earn its stars. Every ${GREEN_EVERY} blue ★ turn into a green ★.`),
-      manage ? h("button", { class: "btn small", type: "button", onclick: () => giveStars(null) }, "＋ Give stars") : null);
+      manage ? h("div", { class: "sq-actions" },
+        h("button", { class: "btn small", type: "button", onclick: () => giveStars(null) }, "＋ Give or take stars"),
+        h("button", { class: "btn small ghost", type: "button", onclick: () => ctx.navigate(`${ctx.base}/stars`) }, "Edit everyone's stars")) : null);
   }
   // Manage: add (or take away) stars by hand, with a reason everyone sees in their history.
+  // Everyone who can get stars: the staff list (Manage), plus anyone who already has stars.
+  function roster() {
+    const known = new Map((people || []).map((u) => [u.uid, u.name]));
+    for (const s of subs || []) if (!known.has(s.uid)) known.set(s.uid, s.name);
+    return [...known].map(([uid, name]) => ({ uid, name })).sort((a, b) => a.name.localeCompare(b.name));
+  }
+  function totalFor(uid) { return Math.max(0, (subs || []).filter((s) => s.uid === uid).reduce((t, s) => t + starValue(s), 0)); }
+  // Quick add/remove for one person (from the leaderboard): type any amount.
   async function giveStars(uid) {
-    const list = people || [];
-    const known = new Map(list.map((u) => [u.uid, u.name]));
-    for (const s of subs) if (!known.has(s.uid)) known.set(s.uid, s.name); // fallback if the staff list can't be read
-    if (!known.size) { ctx.toast("No one to give stars to yet.", "err"); return; }
-    const who = h("select", { class: "input" }, [...known].sort((a, b) => a[1].localeCompare(b[1])).map(([id, n]) => h("option", { value: id, selected: id === uid }, n)));
-    let amount = 1;
-    const reason = h("input", { class: "input", maxlength: "100", placeholder: "e.g. Stayed late to help with the event" });
-    await modal({ title: "Give stars", body: h("div", { class: "form" },
-      field("Who", who),
-      field("Stars", seg([1, 2, 3, 5, -1].map((n) => ({ value: n, label: n > 0 ? `+${n} ★` : `${n} ★`, cls: n < 0 ? "danger" : "" })), amount, (v) => { amount = v; }),
-        "Use −1 to take one back."),
-      field("Reason", reason, "They'll see this in My stars.")),
-    actions: [{ label: "Cancel", kind: "ghost", value: false }, { label: "Save", kind: "primary", onClick: async () => {
-      const name = known.get(who.value);
-      await ctx.api.giveStars(ctx.session(), { uid: who.value, name, stars: amount, reason: reason.value.trim() });
-      ctx.log("Gave stars", `${name}: ${amount > 0 ? "+" : ""}${amount}${reason.value.trim() ? ` (${reason.value.trim()})` : ""}`);
-      ctx.toast(amount > 0 ? `${"★".repeat(Math.min(amount, 5))} for ${name}!` : `Took a star from ${name}`);
+    const list = roster();
+    if (!list.length) { ctx.toast("No one to give stars to yet.", "err"); return; }
+    const who = h("select", { class: "input" }, list.map((p) => h("option", { value: p.uid, selected: p.uid === uid }, p.name)));
+    const amount = h("input", { class: "input sq-amount", type: "number", inputmode: "numeric", min: "1", max: "500", value: "", placeholder: "0" });
+    const now = h("span", { class: "muted small" });
+    const showNow = () => { now.textContent = `Has ${totalFor(who.value)} ★ now`; };
+    who.addEventListener("change", showNow); showNow();
+    const bump = (d) => { amount.value = String(Math.max(0, Math.min(500, (parseInt(amount.value, 10) || 0) + d))); };
+    const reason = h("input", { class: "input", maxlength: "100", placeholder: "e.g. Stars from the whiteboard" });
+    const go = async (sign) => {
+      const n = parseInt(amount.value, 10);
+      if (!(n >= 1 && n <= 500)) throw new Error("Enter a number from 1 to 500.");
+      const p = list.find((x) => x.uid === who.value);
+      if (sign < 0 && n > totalFor(p.uid)) throw new Error(`${p.name} only has ${totalFor(p.uid)} ★.`);
+      await saveChange(p, sign * n, reason.value.trim());
       return true;
-    } }] });
+    };
+    await modal({ title: "Give or take stars", body: h("div", { class: "form" },
+      field("Who", who), now,
+      field("How many", h("div", { class: "sq-stepper" },
+        h("button", { class: "icon-btn", type: "button", "aria-label": "Less", onclick: () => bump(-1) }, "−"), amount,
+        h("button", { class: "icon-btn", type: "button", "aria-label": "More", onclick: () => bump(1) }, "+"),
+        [5, 10, 25].map((n) => h("button", { class: "btn small ghost", type: "button", onclick: () => bump(n) }, `+${n}`)))),
+      field("Reason (optional)", reason, "They'll see this in My stars.")),
+    wide: true,
+    actions: [{ label: "Cancel", kind: "ghost", value: false },
+      { label: "− Take away", kind: "danger", onClick: () => go(-1) },
+      { label: "+ Add stars", kind: "primary", onClick: () => go(1) }] });
+  }
+  async function saveChange(p, diff, reason) {
+    await ctx.api.giveStars(ctx.session(), { uid: p.uid, name: p.name, stars: diff, reason: reason || (diff > 0 ? "Stars added by a manager" : "Stars taken away by a manager") });
+    ctx.log(diff > 0 ? "Gave stars" : "Took stars", `${p.name}: ${diff > 0 ? "+" : ""}${diff}${reason ? ` (${reason})` : ""}`);
+    ctx.toast(diff > 0 ? `+${diff} ★ for ${p.name}` : `${diff} ★ for ${p.name}`);
+  }
+
+  /* =========================== STARS (Manage): the whiteboard =========================== */
+  // Everyone in a fixed A–Z list with their total. Change the number (type it or use − / +),
+  // then save once. Nothing moves around while you edit.
+  function starsView() {
+    const draft = new Map(); // uid -> new total
+    let reason = "", saving = false;
+    const paint = () => {
+      if (notReady()) return;
+      // Don't redraw under someone's fingers while they're typing a number.
+      if (pane.contains(document.activeElement) && document.activeElement.tagName === "INPUT") { pane.dataset.stale = "1"; return; }
+      const list = roster();
+      const changes = list.filter((p) => draft.has(p.uid) && draft.get(p.uid) !== totalFor(p.uid));
+      const reasonIn = h("input", { class: "input", maxlength: "100", value: reason, placeholder: "Reason (optional), e.g. Moved over from the whiteboard", oninput: (e) => { reason = e.target.value; } });
+      const save = h("button", { class: "btn primary", type: "button", disabled: !changes.length || saving, onclick: doSave },
+        changes.length ? `Save changes (${changes.length})` : "No changes");
+      add(clear(pane),
+        h("p", { class: "muted tv-lead" }, "Set each person's total (all time). Type the new number or use − and +, then save."),
+        list.length ? h("div", { class: "card sq-wb" }, list.map((p) => {
+          const cur = totalFor(p.uid), val = draft.has(p.uid) ? draft.get(p.uid) : cur, diff = val - cur;
+          const input = h("input", { class: "input sq-wb-input", type: "number", inputmode: "numeric", min: "0", max: "9999", value: String(val), "aria-label": `${p.name}'s stars`,
+            oninput: (e) => { const v = parseInt(e.target.value, 10); if (v >= 0) draft.set(p.uid, v); else draft.delete(p.uid); },
+            onchange: () => { delete pane.dataset.stale; paint(); },
+            onblur: () => { if (pane.dataset.stale) { delete pane.dataset.stale; setTimeout(paint, 0); } } });
+          const step = (d) => { draft.set(p.uid, Math.max(0, val + d)); paint(); };
+          return h("div", { class: `sq-wb-row${diff ? " changed" : ""}` },
+            h("span", { class: "sq-wb-name" }, p.name),
+            starsFor(cur).el,
+            h("span", { class: "sq-wb-cur muted" }, `${cur} now`),
+            h("div", { class: "sq-stepper" },
+              h("button", { class: "icon-btn", type: "button", "aria-label": "One less", disabled: val <= 0, onclick: () => step(-1) }, "−"),
+              input,
+              h("button", { class: "icon-btn", type: "button", "aria-label": "One more", onclick: () => step(1) }, "+")),
+            h("span", { class: `sq-wb-diff${diff > 0 ? " up" : diff < 0 ? " down" : ""}` }, diff ? `${diff > 0 ? "+" : ""}${diff}` : ""));
+        })) : h("p", { class: "muted empty" }, "No one on the staff list yet."),
+        h("div", { class: "sq-wb-bar" }, reasonIn,
+          changes.length ? h("button", { class: "btn ghost", type: "button", onclick: () => { draft.clear(); paint(); } }, "Undo changes") : null, save));
+    };
+    async function doSave() {
+      const list = roster().filter((p) => draft.has(p.uid) && draft.get(p.uid) !== totalFor(p.uid));
+      if (!list.length) return;
+      saving = true; paint();
+      try {
+        for (const p of list) await saveChange(p, draft.get(p.uid) - totalFor(p.uid), reason.trim());
+        draft.clear(); reason = "";
+      } catch (e) { ctx.toast(e.message || "Couldn't save.", "err"); }
+      saving = false; paint();
+    }
+    return paint;
   }
 
   /* =========================== MY STARS =========================== */
