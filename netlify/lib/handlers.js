@@ -1,7 +1,7 @@
 // Kava Hub server logic: checking PINs, signing people in, and changing users/roles.
 // Runs inside the Netlify Function (netlify/functions/hub.mjs). The database, auth and
 // secrets are passed in, so the same code runs against an in-memory database in tests.
-import { randomBytes, timingSafeEqual } from "node:crypto";
+import { randomBytes, timingSafeEqual, createHash } from "node:crypto";
 import { validatePin, pinKey } from "./pin.js";
 import { DEFAULT_ROLES, DEFAULT_TOOLS, DEFAULT_SETTINGS } from "./defaults.js";
 
@@ -39,8 +39,9 @@ export async function readMedia(media, id) {
 }
 
 // deps: { db, auth: { verifyIdToken, createCustomToken }, now: () => timestamp value,
-//         env: { PIN_PEPPER, SETUP_CODE }, media: { set(key, bytes, { metadata }), getWithMetadata(key, { type }) } }
-export function makeApi({ db, auth, now, env, media, fetchFn = globalThis.fetch }) {
+//         env: { PIN_PEPPER, SETUP_CODE }, media: { set(key, bytes, { metadata }), getWithMetadata(key, { type }) },
+//         push: { generateKeys() -> { publicKey, privateKey }, send(subscription, payloadString, keys) -> Promise } }
+export function makeApi({ db, auth, now, env, media, fetchFn = globalThis.fetch, push = null }) {
   /* ---------------- helpers ---------------- */
   const locRef = (loc) => db.doc(`locations/${loc}`);
   const userRef = (loc, uid) => db.doc(`locations/${loc}/users/${uid}`);
@@ -130,8 +131,111 @@ export function makeApi({ db, auth, now, env, media, fetchFn = globalThis.fetch 
     return { src: `/.netlify/functions/hub?media=${id}`, bytes: bytes.length };
   }
 
+  /* ---------------- phone notifications (web push) ---------------- */
+  // The signing keys are made the first time they're needed and kept in a server-only document,
+  // so there's nothing to set up in Netlify. Each phone that turns notifications on is saved under
+  // locations/{loc}/pushSubs/{hash of its address} (also server-only).
+  const vapidRef = () => db.doc("serverConfig/vapid");
+  async function vapidKeys() {
+    if (!push) fail(500, "Notifications aren't available on this server.");
+    const snap = await vapidRef().get();
+    if (snap.exists && snap.get("publicKey")) return snap.data();
+    const keys = push.generateKeys();
+    await db.runTransaction(async (tx) => {
+      const again = await tx.get(vapidRef());
+      if (!again.exists) tx.set(vapidRef(), { ...keys, createdAt: now() });
+    });
+    return (await vapidRef().get()).data();
+  }
+  const subId = (endpoint) => createHash("sha256").update(endpoint).digest("hex").slice(0, 40);
+  // Everyone at the location who has notifications on and Manage on `tool` (except `skipUid`).
+  async function managersWithPush(loc, tool, skipUid) {
+    const [subs, users, roles] = await Promise.all([
+      db.collection(`locations/${loc}/pushSubs`).get(),
+      db.collection(`locations/${loc}/users`).get(),
+      db.collection(`locations/${loc}/roles`).get(),
+    ]);
+    const userBy = new Map(users.docs.map((d) => [d.id, d.data()]));
+    const roleBy = new Map(roles.docs.map((d) => [d.id, d.data()]));
+    const level = (u) => (u.roleId === "owner" ? 2 : (u.overrides?.[tool] ?? roleBy.get(u.roleId)?.perms?.[tool] ?? 0));
+    return subs.docs.filter((d) => {
+      const u = userBy.get(d.get("uid"));
+      return u && u.active === true && d.get("uid") !== skipUid && level(u) >= 2 && (d.get("tools") || []).includes(tool);
+    });
+  }
+  // Sends to each saved phone; phones that have been switched off or uninstalled are forgotten.
+  async function sendPush(docs, message) {
+    if (!docs.length) return { sent: 0 };
+    const keys = await vapidKeys();
+    const body = JSON.stringify(message);
+    let sent = 0;
+    await Promise.all(docs.map(async (d) => {
+      try { await push.send({ endpoint: d.get("endpoint"), keys: d.get("keys") }, body, keys); sent++; }
+      catch (e) { if (e?.statusCode === 404 || e?.statusCode === 410) await d.ref.delete(); }
+    }));
+    return { sent };
+  }
+  const tsMillis = (v) => (v?.toMillis ? v.toMillis() : v instanceof Date ? v.getTime() : Number(v) || 0);
+
   /* ---------------- actions ---------------- */
   const actions = {
+    // The public key phones need to turn notifications on.
+    async pushKey(data, idToken) {
+      await caller(idToken);
+      return { publicKey: (await vapidKeys()).publicKey };
+    },
+    // Save this phone for notifications (Side Quest sign-offs for now). Needs Manage on Side Quests.
+    async pushSubscribe(data, idToken) {
+      const c = await caller(idToken);
+      if (c.levelOf("quests") < 2) fail(403, "Notifications are for people who review Side Quests.");
+      const sub = data.subscription || {};
+      const endpoint = String(sub.endpoint || "");
+      const p256dh = String(sub.keys?.p256dh || ""), authKey = String(sub.keys?.auth || "");
+      if (!/^https:\/\/[^\s]{10,900}$/.test(endpoint) || !/^[A-Za-z0-9_=-]{20,200}$/.test(p256dh) || !/^[A-Za-z0-9_=-]{8,100}$/.test(authKey)) fail(400, "That phone's notification details look wrong.");
+      await db.doc(`locations/${c.loc}/pushSubs/${subId(endpoint)}`).set({
+        uid: c.me.uid, name: c.me.name, endpoint, keys: { p256dh, auth: authKey }, tools: ["quests"],
+        device: String(data.device || "").slice(0, 80), at: now(),
+      });
+      return { ok: true };
+    },
+    async pushUnsubscribe(data, idToken) {
+      const c = await caller(idToken);
+      const endpoint = String(data.endpoint || "");
+      if (!endpoint) return { ok: true };
+      const ref = db.doc(`locations/${c.loc}/pushSubs/${subId(endpoint)}`);
+      const snap = await ref.get();
+      if (snap.exists && snap.get("uid") === c.me.uid) await ref.delete();
+      return { ok: true };
+    },
+    // A test notification to the caller's own phones.
+    async pushTest(data, idToken) {
+      const c = await caller(idToken);
+      const mine = (await db.collection(`locations/${c.loc}/pushSubs`).get()).docs.filter((d) => d.get("uid") === c.me.uid);
+      if (!mine.length) fail(404, "This phone isn't set up for notifications yet.");
+      return sendPush(mine, { title: "Kava Hub", body: "Notifications are working. 🎉", url: "/#/tool/quests/review", tag: "test" });
+    },
+    // Called right after someone signs off a side quest: tells the reviewers. Once per sign-off.
+    async questSignedOff(data, idToken) {
+      const c = await caller(idToken);
+      const id = String(data.subId || "");
+      if (!/^[A-Za-z0-9]{10,40}$/.test(id)) fail(400, "Unknown sign-off.");
+      const ref = db.doc(`locations/${c.loc}/tools-data/quests/subs/${id}`);
+      const snap = await ref.get();
+      if (!snap.exists || snap.get("uid") !== c.me.uid || snap.get("kind") === "manual") fail(404, "Unknown sign-off.");
+      if (snap.get("notifiedAt")) return { sent: 0 };
+      const at = tsMillis(snap.get("at"));
+      if (at && tsMillis(now()) - at > 15 * 60e3) return { sent: 0 };
+      await ref.update({ notifiedAt: now() });
+      const s = snap.data();
+      const auto = s.status === "approved";
+      const stars = Number.isInteger(s.stars) && s.stars > 1 ? ` (${s.stars} ★)` : "";
+      return sendPush(await managersWithPush(c.loc, "quests", c.me.uid), {
+        title: auto ? "⭐ Side quest done (auto-approved)" : "⭐ Side quest to review",
+        body: `${s.name} finished “${s.questTitle}”${stars}${s.photo ? " · photo attached" : ""}`,
+        url: "/#/tool/quests/review", tag: `quest-${id}`,
+      });
+    },
+
     // Public: does this location still need its first owner?
     async setupStatus(data) {
       const loc = cleanLoc(data.loc);

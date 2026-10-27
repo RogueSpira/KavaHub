@@ -17,10 +17,18 @@ function setup() {
     return { ok: !url.includes("missing"), status: url.includes("missing") ? 404 : 200, arrayBuffer: async () => (pic || Buffer.from("<html>")),
       headers: { get: (k) => (k === "content-type" ? (pic ? "image/jpeg" : "text/html; charset=utf-8") : null) } };
   };
-  const call = makeApi({ db, auth: fakeAuth, now: () => new Date(), env: { PIN_PEPPER: "test-pepper", SETUP_CODE: "kava" }, media, fetchFn });
+  const pushed = [];
+  const push = {
+    generateKeys: () => ({ publicKey: "PUB-KEY", privateKey: "PRIV-KEY" }),
+    async send(sub, body, keys) {
+      if (sub.endpoint.includes("gone")) { const e = new Error("gone"); e.statusCode = 410; throw e; }
+      pushed.push({ endpoint: sub.endpoint, body: JSON.parse(body), keys });
+    },
+  };
+  const call = makeApi({ db, auth: fakeAuth, now: () => new Date(), env: { PIN_PEPPER: "test-pepper", SETUP_CODE: "kava" }, media, fetchFn, push });
   const loc = "mandarin";
   const api = (action, data = {}, token = null) => call(action, { loc, ...data }, token);
-  return { db, api, loc, media, fetched };
+  return { db, api, loc, media, fetched, pushed };
 }
 const rejects = (p, status, re) => assert.rejects(p, (e) => e.status === status && (!re || re.test(e.message)));
 
@@ -255,4 +263,36 @@ test("drivePhoto: only photos in the community folder, for people with Reel Make
   await rejects(t.api("drivePhoto", { id: "inFolderDoc123" }, t.owner), 415);
   await rejects(t.api("drivePhoto", { id: "../../etc" }, t.owner), 400);
   await rejects(t.api("drivePhoto", { id: "inFolderPhoto1" }), 401);
+});
+
+test("phone notifications: managers get told when a side quest is signed off", async () => {
+  const t = await bootstrapped();
+  const sub = (name) => ({ endpoint: `https://push.example.com/${name}-0123456789`, keys: { p256dh: "B".repeat(40), auth: "a".repeat(16) } });
+  assert.equal((await t.api("pushKey", {}, t.owner)).publicKey, "PUB-KEY");
+  assert.equal((await t.api("pushKey", {}, t.owner)).publicKey, "PUB-KEY"); // same keys every time
+  await t.api("pushSubscribe", { subscription: sub("owner-phone") }, t.owner);
+  await t.api("pushSubscribe", { subscription: sub("gone-phone") }, t.owner);
+  await rejects(t.api("pushSubscribe", { subscription: { endpoint: "http://x" } }, t.owner), 400);
+  // Staff can't sign up for reviewer notifications.
+  const { uid } = await t.api("adminCreateUser", { name: "Daniel", roleId: "kavatender", pin: "1357" }, t.owner);
+  const { token: daniel } = await t.api("pinLogin", { pin: "1357" });
+  await rejects(t.api("pushSubscribe", { subscription: sub("daniel-phone") }, daniel), 403);
+  // Daniel signs off; the owner's phone hears about it once.
+  await t.db.doc("locations/mandarin/tools-data/quests/subs/abcdefghij12").set({ uid, name: "Daniel", questTitle: "Clean the ice machine", status: "pending", stars: 2, photo: "", at: new Date() });
+  const r = await t.api("questSignedOff", { subId: "abcdefghij12" }, daniel);
+  assert.equal(r.sent, 1);
+  assert.equal(t.pushed.length, 1);
+  assert.match(t.pushed[0].body.body, /Daniel finished “Clean the ice machine” \(2 ★\)/);
+  assert.equal(t.pushed[0].body.title, "⭐ Side quest to review");
+  assert.equal(t.pushed[0].keys.privateKey, "PRIV-KEY");
+  assert.equal((await t.api("questSignedOff", { subId: "abcdefghij12" }, daniel)).sent, 0); // only once
+  // The dead phone was forgotten.
+  assert.equal((await t.db.collection("locations/mandarin/pushSubs").get()).size, 1);
+  // Someone else can't trigger it for Daniel's sign-off.
+  await t.db.doc("locations/mandarin/tools-data/quests/subs/zyxwvutsrq98").set({ uid, name: "Daniel", questTitle: "X", status: "approved", at: new Date() });
+  await rejects(t.api("questSignedOff", { subId: "zyxwvutsrq98" }, t.owner), 404);
+  // Test notification goes to your own phones.
+  assert.equal((await t.api("pushTest", {}, t.owner)).sent, 1);
+  await t.api("pushUnsubscribe", { endpoint: sub("owner-phone").endpoint }, t.owner);
+  await rejects(t.api("pushTest", {}, t.owner), 404);
 });

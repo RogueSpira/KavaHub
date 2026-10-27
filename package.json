@@ -2,7 +2,9 @@
   "name": "kava-hub",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "test": "node --test test/*.test.js",
     "dev": "netlify dev",
@@ -10,6 +12,7 @@
   },
   "dependencies": {
     "@netlify/blobs": "^10.7.13",
-    "firebase-admin": "^13.10.0"
+    "firebase-admin": "^13.10.0",
+    "web-push": "^3.6.7"
   }
 }

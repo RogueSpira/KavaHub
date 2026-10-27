@@ -35,6 +35,9 @@ async function init() {
   } catch (e) {
     throw new ApiError(500, `Server couldn't start Firebase (${e.message}). Check FIREBASE_SERVICE_ACCOUNT.`);
   }
+  // Phone notifications (web push). Loaded here so a problem with it can't affect sign-in.
+  let webpush = null;
+  try { webpush = (await import("web-push")).default; } catch (e) { console.warn("web-push unavailable:", e.message); }
   handle = makeApi({
     db,
     auth: { verifyIdToken: (t) => auth.verifyIdToken(t), createCustomToken: (u, c) => auth.createCustomToken(u, c) },
@@ -44,6 +47,13 @@ async function init() {
     media: {
       set: (...a) => mediaStore().set(...a),
       getWithMetadata: (...a) => mediaStore().getWithMetadata(...a),
+    },
+    push: webpush && {
+      generateKeys: () => webpush.generateVAPIDKeys(),
+      send: (subscription, body, keys) => webpush.sendNotification(subscription, body, {
+        vapidDetails: { subject: "https://kavahub.netlify.app", publicKey: keys.publicKey, privateKey: keys.privateKey },
+        TTL: 60 * 60 * 24, urgency: "high",
+      }),
     },
   });
   return handle;

@@ -2,10 +2,19 @@
 // and print it ready to laminate.
 //   #/tool/menus              saved menus
 //   #/tool/menus/new/<tpl>    start a new one (tpl: express | blank)
+//   #/tool/menus/new/<tpl>/event/<eventId>   …with the banner set from a TV Screens event
 //   #/tool/menus/edit/<id>    edit
 // Use = make, edit and print menus, delete your own · Manage = also delete anyone's.
 import { h, clear, confirm, field, seg, timeAgo } from "../../js/ui.js";
 import { renderMenu, fitIt, PAPERS, THEMES, themeOf, DEFAULT_ADDRESS, DEFAULT_TAGLINE, LOGO } from "./render.js";
+import { withDefaults, occurrences, businessDate } from "../../js/tv-shared.js";
+
+// Upcoming events from TV Screens (next 30 days, each event once), for "Fill from an event".
+export function upcomingEvents(tv, days = 30) {
+  const seen = new Set();
+  return occurrences(withDefaults("events", tv?.events).items, businessDate(), days)
+    .filter((o) => o.ev.active !== false && !seen.has(o.ev.id) && seen.add(o.ev.id));
+}
 
 const add = (el, ...kids) => { el.append(...kids.flat(Infinity).filter((k) => k != null && k !== false)); return el; };
 const uid = () => Math.random().toString(36).slice(2, 9);
@@ -40,15 +49,18 @@ export const TEMPLATES = {
 export function mount(el, ctx) {
   document.fonts?.load?.("16px 'Bungee Menu'").catch(() => {}); // so Print can go straight to the dialog
   new Image().src = LOGO;
-  const [view, arg] = ctx.sub;
+  const [view, arg, from, fromId] = ctx.sub;
   let menus = null, failed = false;
+  // TV Screens events, for the event banner. tvRef.on is set by the editor.
+  const tvRef = { data: null, on: null, eventId: from === "event" ? fromId : "" };
   let paint = () => {};
-  if (view === "edit" && arg) paint = editor(el, ctx, () => menus, () => failed, arg, null);
-  else if (view === "new") paint = editor(el, ctx, () => menus, () => failed, null, (TEMPLATES[arg] || TEMPLATES.express).make());
+  if (view === "edit" && arg) paint = editor(el, ctx, () => menus, () => failed, arg, null, tvRef);
+  else if (view === "new") paint = editor(el, ctx, () => menus, () => failed, null, (TEMPLATES[arg] || TEMPLATES.express).make(), tvRef);
   else paint = list(el, ctx, () => menus, () => failed);
   paint();
   const stop = ctx.api.watchMenus((l, err) => { if (err) failed = true; menus = l || []; paint(); });
-  return () => stop();
+  const stopTv = view === "edit" || view === "new" ? ctx.api.watchTv((d) => { tvRef.data = d || {}; tvRef.on?.(); }) : () => {};
+  return () => { stop(); stopTv(); };
 }
 
 /* =========================== saved menus =========================== */
@@ -98,7 +110,7 @@ function list(el, ctx, getMenus, getFailed) {
 }
 
 /* =========================== editor =========================== */
-function editor(el, ctx, getMenus, getFailed, id, fresh) {
+function editor(el, ctx, getMenus, getFailed, id, fresh, tvRef) {
   let draft = fresh, loaded = !!fresh, dirty = !!fresh, savedId = id;
   const form = h("div", { class: "mm-edit" });
   const previewBox = h("div", { class: "mm-preview-box" });
@@ -157,11 +169,38 @@ function editor(el, ctx, getMenus, getFailed, id, fresh) {
   /* ---- the form ---- */
   const txt = (obj, key, attrs = {}) => h("input", { class: "input", value: obj[key] ?? "", ...attrs, oninput: (e) => { obj[key] = e.target.value; touch(); } });
   const sectionsBox = h("div", { class: "mm-edit" });
+  // "Fill from an event": sets the banner (and a new menu's name) from an upcoming TV Screens event.
+  const evSelect = h("select", { class: "input", onchange: (e) => {
+    const o = upcomingEvents(tvRef.data)[Number(e.target.value)];
+    e.target.value = "";
+    if (o) useEvent(o.ev);
+  } });
+  function useEvent(ev) {
+    draft.event = ev.title;
+    if (!savedId && (!draft.title || draft.title === "Express menu")) draft.title = `${ev.title} menu`;
+    touch(); build();
+  }
+  function fillEvOptions() {
+    const list = upcomingEvents(tvRef.data);
+    clear(evSelect).append(h("option", { value: "" }, list.length ? "Fill from an event…" : "No upcoming events on TV Screens"),
+      ...list.map((o, i) => h("option", { value: i }, `${o.ev.title} · ${o.date.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}`)));
+    evSelect.disabled = !list.length;
+  }
+  tvRef.on = () => {
+    fillEvOptions();
+    // Opened from an event in TV Screens: use it once.
+    if (tvRef.eventId && draft) {
+      const ev = (withDefaults("events", tvRef.data.events).items || []).find((x) => x.id === tvRef.eventId);
+      tvRef.eventId = "";
+      if (ev) useEvent(ev);
+    }
+  };
+  fillEvOptions();
   function build() {
     add(clear(form),
       h("div", { class: "card form" },
         field("Menu name (for finding it later)", txt(draft, "title", { maxlength: "80", placeholder: "e.g. Halloween trivia express menu" })),
-        field("Event banner (optional)", txt(draft, "event", { maxlength: "60", placeholder: "e.g. Trivia Night Specials" }), "Shows as a banner under the logo."),
+        field("Event banner (optional)", h("div", { class: "mm-ev-row" }, txt(draft, "event", { maxlength: "60", placeholder: "e.g. Trivia Night Specials" }), evSelect), "Shows as a banner under the logo."),
         field("Paper", seg(Object.entries(PAPERS).map(([k, p]) => ({ value: k, label: p.label })), draft.paper || "letter", (v) => { draft.paper = v; touch(); })),
         field("Look", seg(Object.entries(THEMES).map(([k, l]) => ({ value: k, label: l })), themeOf(draft.theme), (v) => { draft.theme = v; touch(); })),
         h("details", {}, h("summary", { class: "muted", style: { cursor: "pointer" } }, "Header & footer text"),

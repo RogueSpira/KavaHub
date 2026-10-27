@@ -13,6 +13,7 @@ import {
   SECTIONS, sectionById, SLIDES, slideById, DEFAULT_PERMS, withDefaults, crewFor, businessKey, businessDate, keyOf,
   dateOfKey, WEEKDAYS, NTH, occurrences, repeatLabel, isRecurring, okImage, timeMinutes, fmtTime, monthKey, themeFor,
 } from "../../js/tv-shared.js";
+import { levelFor } from "../../js/perms.js";
 
 const BOARD = "/board/";
 // Like el.append, but skips empty bits (null/false) and flattens lists.
@@ -197,7 +198,14 @@ function eventsView(pane, ctx, store) {
     const upcoming = once.filter((e) => (e.date || "") >= todayKey), past = once.filter((e) => (e.date || "") < todayKey).reverse();
     const next = Object.fromEntries(occurrences(items, businessDate(), 70).reverse().map((o) => [o.ev.id, o.date]));
 
-    const row = (e) => h("button", { type: "button", class: `row tv-ev${e.active === false ? " row-off" : ""}`, onclick: () => editEvent(ctx, store, e) },
+    // One event entry → everything else: a reel or a menu, already filled in from this event.
+    const canReel = levelFor(ctx.session(), "reels") >= 1, canMenu = levelFor(ctx.session(), "menus") >= 1;
+    const makers = (e) => (e.active === false || (e.repeat === "once" && (e.date || "") < todayKey) || !(canReel || canMenu) ? null
+      : h("div", { class: "tv-ev-makers" },
+        canReel ? h("button", { class: "btn small ghost", type: "button", title: "Make a reel for this event", onclick: () => ctx.navigate(`#/tool/reels/event/${encodeURIComponent(e.id)}`) }, "🎬 Reel") : null,
+        canMenu ? h("button", { class: "btn small ghost", type: "button", title: "Make a menu for this event", onclick: () => ctx.navigate(`#/tool/menus/new/express/event/${encodeURIComponent(e.id)}`) }, "🧾 Menu") : null));
+    const row = (e) => h("div", { class: "tv-ev-wrap" }, rowBtn(e), makers(e));
+    const rowBtn = (e) => h("button", { type: "button", class: `row tv-ev${e.active === false ? " row-off" : ""}`, onclick: () => editEvent(ctx, store, e) },
       okImage(e.image) ? h("img", { class: "tv-ev-thumb", src: e.image, alt: "" }) : h("span", { class: "tv-ev-thumb empty" }, "📅"),
       h("span", { class: "row-main" },
         h("span", { class: "row-title" }, e.title, e.featured ? h("span", { class: "chip chip-ok" }, "Own slide") : null, e.active === false ? h("span", { class: "chip chip-off" }, "Off") : null),

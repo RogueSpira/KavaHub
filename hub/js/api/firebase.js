@@ -281,7 +281,13 @@ export function watchQuestSubs(cb) {
 }
 // round: for a recurring quest, the date it opened that this sign-off counts for.
 // auto: auto-approve is on, so it goes straight in as approved.
-export const submitQuest = (session, quest, { note, photo, round = "", auto = false }) => F.addDoc(col(`${SQ}/subs`), {
+// Afterwards the hub's server is told, so reviewers with notifications on get a ping.
+export async function submitQuest(session, quest, opts) {
+  const ref = await addQuestSub(session, quest, opts);
+  call("questSignedOff", { subId: ref.id }).catch((e) => console.warn("[hub] notify", e.message));
+  return ref.id;
+}
+const addQuestSub = (session, quest, { note, photo, round = "", auto = false }) => F.addDoc(col(`${SQ}/subs`), {
   ...(round ? { round } : {}),
   ...(auto ? { auto: true, reviewedBy: "Auto-approved", reviewedAt: F.serverTimestamp(), reviewNote: "" } : {}),
   questId: quest.id, questTitle: quest.title, uid: session.uid, name: session.me.name,
@@ -300,6 +306,12 @@ export const giveStars = (session, { uid, name, stars, reason }) => F.addDoc(col
   kind: "manual", questId: "", questTitle: reason || (stars > 0 ? "Bonus star" : "Star taken back"), uid, name, note: "", photo: "",
   at: F.serverTimestamp(), status: "approved", stars, reviewedBy: session.me.name, reviewedAt: F.serverTimestamp(), reviewNote: "",
 });
+
+/* ---------- phone notifications ---------- */
+export const pushKey = () => call("pushKey", {});
+export const pushSubscribe = (subscription, device) => call("pushSubscribe", { subscription, device });
+export const pushUnsubscribe = (endpoint) => call("pushUnsubscribe", { endpoint });
+export const pushTest = () => call("pushTest", {});
 
 /* ---------- Menu Maker ---------- */
 const menuCol = () => col("tools-data/menus/items");

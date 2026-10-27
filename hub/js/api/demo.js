@@ -399,6 +399,9 @@ export async function saveQuest(session, qid, { title, details, repeat, open, st
   quests.unshift(x); changed(); return x.id;
 }
 let questSettings = { maxShown: 0, autoApprove: false };
+// Phone notifications need the real hub (they go through its server).
+const noPush = async () => { await wait(100); throw new Error("Phone notifications don't work in demo mode."); };
+export const pushKey = noPush, pushSubscribe = noPush, pushUnsubscribe = async () => {}, pushTest = noPush;
 export function watchQuestSettings(cb) { return watch(() => cb(structuredClone(questSettings))); }
 export async function saveQuestSettings(session, changes) { await wait(80); needQuest(2); questSettings = { ...questSettings, ...changes }; changed(); }
 export async function setQuestOpen(session, qid, open) { await wait(80); needQuest(2); Object.assign(quests.find((x) => x.id === qid), { open, updatedAt: now() }); changed(); }

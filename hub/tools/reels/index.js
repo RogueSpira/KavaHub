@@ -5,7 +5,7 @@
 import { h, clear, field, seg } from "../../js/ui.js";
 import { W, H, TEMPLATES, LOOKS, drawFrame, DISPLAY } from "./draw.js";
 import { Muxer, ArrayBufferTarget } from "../../vendor/mp4-muxer.mjs";
-import { withDefaults, occurrences, businessDate, crewFor, keyOf } from "../../js/tv-shared.js";
+import { withDefaults, occurrences, businessDate, crewFor, dateOfKey, themeFor } from "../../js/tv-shared.js";
 
 const add = (el, ...kids) => { el.append(...kids.flat(Infinity).filter((k) => k != null && k !== false)); return el; };
 const LOGO = "/board/assets/mandarin-logo.png", MANNY = "/board/assets/manny.png";
@@ -125,6 +125,9 @@ export function mount(el, ctx) {
   const reel = { template: "drink", look: "cream", seconds: 10, data: {} };
   const assets = { logo: null, manny: null, photo: null, items: new Map() }; // items: list-row photos, by URL
   let photoUrl = "", photoSource = "";
+  // #/tool/reels/event/<eventId>: opened from an event in TV Screens; filled in once TV data arrives.
+  let wantEvent = ctx.sub[0] === "event" ? ctx.sub[1] || "" : "";
+  if (wantEvent) reel.template = "event";
   // Monthly recap: which month, the photos added to the community folder that month, and which are in.
   // Early in a month (first week) it starts on last month, so the recap is ready to go.
   const recap = { month: (() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth() - (d.getDate() <= 7 ? 1 : 0), 1); })(), list: null, error: "", loading: false };
@@ -323,6 +326,24 @@ export function mount(el, ctx) {
   }
 
   /* ---------- pull from TV Screens ---------- */
+  // Event promo from one occurrence of a TV Screens event ({ ev, date, key }).
+  function fillFromEvent(o) {
+    const ev = o.ev, days = Math.round((o.date - businessDate()) / 864e5);
+    reel.data.title = ev.title;
+    reel.data.when = `${o.date.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}${ev.time ? ` · ${ev.time}` : ""}`;
+    reel.data.kicker = days === 0 ? "Tonight" : days === 1 ? "Tomorrow" : days < 7 ? `This ${o.date.toLocaleDateString([], { weekday: "long" })}` : "Coming up";
+    const theme = ev.featured ? themeFor(ev, o.date) : "";
+    reel.data.desc = (ev.details || (theme ? `This month's theme: ${theme}` : "") || "").replace(/\*\*/g, "");
+    setPhoto(ev.image && sameSite(ev.image) ? ev.image : null, ev.image ? "hub" : "");
+  }
+  // Next time the event happens (or its date, if it's a one-off that's already passed).
+  function nextOf(eventId) {
+    const items = withDefaults("events", tv?.events).items || [];
+    const hit = occurrences(items, businessDate(), 90).find((o) => o.ev.id === eventId);
+    if (hit) return hit;
+    const ev = items.find((x) => x.id === eventId);
+    return ev ? { ev, date: ev.date ? dateOfKey(ev.date) : businessDate(), key: ev.date || "" } : null;
+  }
   // "This week at Mandarin": the next 7 days of events, one line per day (same-day events joined).
   function fillWeek() {
     const from = businessDate();
@@ -354,15 +375,7 @@ export function mount(el, ctx) {
       const seen = new Set();
       const opts = occ.filter((o) => (seen.has(o.ev.id) ? false : seen.add(o.ev.id))).slice(0, 15).map((o) => ({
         label: `${o.ev.title} · ${o.date.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}`, o }));
-      pickRow("Fill from an upcoming event", opts, ({ o }) => {
-        const ev = o.ev, isToday = o.key === keyOf(businessDate());
-        reel.data.title = ev.title;
-        reel.data.when = `${o.date.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}${ev.time ? ` · ${ev.time}` : ""}`;
-        reel.data.kicker = isToday ? "Tonight" : `This ${o.date.toLocaleDateString([], { weekday: "long" })}`;
-        const theme = ev.themes ? Object.values(ev.themes)[0] : "";
-        reel.data.desc = (ev.details || (theme ? `This month's theme: ${theme}` : "") || "").replace(/\*\*/g, "");
-        if (ev.image && sameSite(ev.image)) setPhoto(ev.image, "hub");
-      });
+      pickRow("Fill from an upcoming event", opts, ({ o }) => fillFromEvent(o));
     } else if (t === "recap") {
       add(pullBox, recapPicker());
     } else if (t === "week") {
@@ -455,6 +468,11 @@ export function mount(el, ctx) {
   fillDefaults(); build(); raf = requestAnimationFrame(loop);
   const stopTv = ctx.api.watchTv((d) => {
     const first = !tv; tv = d || {};
+    if (first && wantEvent) {
+      const o = nextOf(wantEvent); wantEvent = "";
+      if (o) { fillFromEvent(o); build(); restart(); return; }
+      ctx.toast("That event wasn't found.", "err");
+    }
     if (first && reel.template === "week") { fillWeek(); loadRowImages(); build(); }
     else if (first && reel.template === "recap") loadRecapMonth();
     else paintPulls();

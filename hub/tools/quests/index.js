@@ -12,6 +12,7 @@ import { h, clear, modal, confirm, field, seg, timeAgo } from "../../js/ui.js";
 import { shrinkImage } from "../../js/images.js";
 import { businessKey, dateOfKey, WEEKDAYS } from "../../js/tv-shared.js";
 import { isRecurring, roundOf, nextRound, scheduleLabel, whenLabel } from "./schedule.js";
+import * as push from "../../js/push.js";
 
 const add = (el, ...kids) => { el.append(...kids.flat(Infinity).filter((k) => k != null && k !== false)); return el; };
 const GREEN_EVERY = 5;
@@ -21,6 +22,7 @@ export function mount(el, ctx) {
   const view = ctx.sub[0] || "board";
   let quests = null, subs = null, failed = false, people = null, period = "month", settings = {};
   const tidied = new Set(); // one-time quests already closed after an auto-approval
+  let notifyEl = null;     // the phone-notifications card (see notifyCard())
   const pane = h("section", { class: "pane" });
   const nav = h("nav", { class: "tabs", role: "tablist" });
   add(el, nav, pane);
@@ -79,6 +81,35 @@ export function mount(el, ctx) {
       ctx.log(on ? "Turned on side quest auto-approve" : "Turned off side quest auto-approve", "");
       ctx.toast(on ? "Auto-approve is on" : "Auto-approve is off");
     } catch (e) { ctx.toast(e.message, "err"); }
+  }
+  // Phone notifications for this device: a ping when someone signs off a quest.
+  // Built once (not on every repaint) because checking the phone's status is async.
+  function notifyCard() {
+    if (!notifyEl) { notifyEl = h("div", { class: "card sq-notify" }); paintNotify(); }
+    return notifyEl;
+  }
+  async function paintNotify(msg = "") {
+    const st = await push.status().catch(() => "unsupported");
+    const btn = (label, cls, fn) => h("button", { class: `btn small ${cls}`, type: "button", onclick: async (e) => {
+      e.currentTarget.disabled = true;
+      try { await fn(); } catch (err) { ctx.toast(err.message || "Didn't work.", "err"); }
+      paintNotify();
+    } }, label);
+    const text = {
+      "ios-home": "To get notifications on an iPhone or iPad: tap Share → Add to Home Screen, open the hub from that new icon, then come back here.",
+      unsupported: "This browser can't show notifications. On a phone, use Safari (iPhone, from the Home Screen icon) or Chrome (Android).",
+      blocked: "Notifications are blocked for the hub on this device. Turn them on in the phone's settings (Settings → Notifications → Kava Hub), then reload.",
+      on: "On for this device. You'll get a notification each time someone signs off a quest.",
+      off: "Get a notification on this device whenever someone signs off a quest.",
+    }[st];
+    add(clear(notifyEl),
+      h("div", { class: "sq-notify-head" }, h("span", { class: "sq-h" }, "🔔 Phone notifications"),
+        st === "on" ? h("span", { class: "chip chip-ok" }, "On") : null),
+      h("p", { class: "muted small" }, msg || text),
+      h("div", { class: "sq-actions" },
+        st === "off" ? btn("Turn on for this device", "primary", async () => { await push.enable(ctx.api); ctx.toast("Notifications on 🔔"); ctx.log("Turned on side quest notifications", ""); }) : null,
+        st === "on" ? btn("Send a test", "", async () => { await ctx.api.pushTest(); ctx.toast("Test sent. It should pop up in a few seconds."); }) : null,
+        st === "on" ? btn("Turn off", "ghost", async () => { await push.disable(ctx.api); ctx.toast("Notifications off"); }) : null));
   }
   function autoControl() {
     return h("div", { class: `card sq-auto${autoOn() ? " on" : ""}` },
@@ -341,6 +372,7 @@ export function mount(el, ctx) {
       const checks = subs.filter(toCheck).sort((a, b) => a.at - b.at);
       const recent = subs.filter((s) => s.status !== "pending" && s.reviewedAt && !toCheck(s)).sort((a, b) => b.reviewedAt - a.reviewedAt).slice(0, 10);
       add(clear(pane),
+        notifyCard(),
         autoControl(),
         checks.length ? [h("h3", { class: "tv-h3" }, `✅ Auto-approved: check when you can (${checks.length})`),
           h("div", { class: "sq-checks-bar" }, h("button", { class: "btn small", type: "button", onclick: () => allGood(checks) }, `👍 All ${checks.length} look good`)),
