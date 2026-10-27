@@ -39,7 +39,8 @@ export function renderMenu(menu) {
     h("div", { class: "mm-frame" },
       m.address ?? DEFAULT_ADDRESS ? h("div", { class: "mm-addr" }, m.address ?? DEFAULT_ADDRESS) : null,
       h("div", { class: "mm-head" },
-        h("img", { class: "mm-logo", src: LOGO, alt: "Kava & Co. Mandarin" }),
+        // Size set right on the image too, so it can never blow up even if the page's stylesheet is an old cached copy.
+        h("img", { class: "mm-logo", src: LOGO, alt: "Kava & Co. Mandarin", style: { width: "78%", height: "auto", maxWidth: "78%", display: "block" } }),
         tag ? h("div", { class: "mm-tag" }, tag) : null),
       m.event ? h("div", { class: "mm-event" }, m.event) : null,
       sections.map(section),
