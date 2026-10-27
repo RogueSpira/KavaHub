@@ -199,7 +199,6 @@ function footer(g, L, t) {
   const p = easeOut(prog(t, 0.4, 0.8));
   g.save(); g.globalAlpha = p;
   textBlock(g, "11018 Old Saint Augustine Rd · Mandarin", { font: `700 {s}px ${BODY}`, size: 32, maxLines: 1, upper: true, color: L.foot })?.draw(FOOT);
-  textBlock(g, "Good vibes · Zero proof", { font: `700 {s}px ${BODY}`, size: 26, maxLines: 1, upper: true, color: L.foot2 })?.draw(FOOT + 48);
   g.restore();
 }
 function manny(g, t, a, D) {
@@ -331,7 +330,9 @@ export const TEMPLATES = {
   specials: {
     name: "Tonight's specials", icon: "📋",
     fields: [["kicker", "Small line on top", "Happy hour 9–10 PM"], ["title", "Title", "Tonight's Specials"]],
-    list: { label: "Drinks", max: 5, keys: [["name", "Drink"], ["desc", "Description"], ["price", "Price"]] },
+    list: { label: "Drinks", max: 5, addLabel: "+ Add a drink",
+      top: [["name", "Drink", 30], ["price", "$ Price", 8, "mm-price"]], below: ["desc", "Short description (optional)", 50],
+      sample: [{ name: "Mango Tango", desc: "Raspberry, mango", price: "$10" }, { name: "Hibiscus Lemonade", desc: "Hibiscus, lemon, agave", price: "$10" }, { name: "Pina Colada", desc: "Pineapple, coconut creme", price: "$11" }] },
     photo: null, end: "Pull up tonight",
     draw(g, L, t, d) {
       const kicker = textBlock(g, d.kicker, kickerStyle(L));
@@ -355,6 +356,48 @@ export const TEMPLATES = {
         }, { dist: 0 });
         if (it.price) enter(g, t, at + 0.3, () => badge(g, L, it.price, W - 190, ry + rowH / 2, Math.min(74, rowH / 2 + 4)), { pop: { cx: W - 190, cy: ry + rowH / 2 } });
       });
+    },
+  },
+  week: {
+    name: "This week at Mandarin", icon: "📅",
+    fields: [["kicker", "Small line on top", "Oct 27 – Nov 2"], ["title", "Title", "This Week at Mandarin"]],
+    list: { label: "Days", max: 7, addLabel: "+ Add a day",
+      top: [["day", "Day", 12, "rm-day"], ["name", "What's happening", 40, "rm-grow"]], below: ["time", "Time (optional)", 30], photo: true,
+      sample: [{ day: "Tue 10/27", name: "Trivia Night", time: "8 PM" }, { day: "Thu 10/29", name: "Karaoke", time: "9 PM" }, { day: "Fri 10/30", name: "Crimson Masquerade", time: "8 PM" }] },
+    photo: null, end: "See you this week",
+    // One row per day: a day block on the left (weekday + date), the event and time beside it.
+    draw(g, L, t, d, a) {
+      const kicker = textBlock(g, d.kicker, kickerStyle(L));
+      const title = textBlock(g, d.title, titleStyle(L, 86));
+      const items = (d.items || []).filter((i) => i.name || i.day).slice(0, 7);
+      let y = TOP;
+      if (kicker) { enter(g, t, 0.5, () => kicker.draw(TOP)); y += kicker.h + GAP; }
+      if (title) { const yy = y; enter(g, t, 0.8, () => title.draw(yy)); y += title.h + GAP + 6; }
+      const rowGap = 18;
+      const rowH = items.length ? Math.min(170, (BOTTOM - y - rowGap * (items.length - 1)) / items.length) : 0;
+      const step = items.length > 5 ? 0.3 : 0.4;
+      items.forEach((it, i) => {
+        const ry = y + i * (rowH + rowGap), at = 1.3 + i * step;
+        const [wd, ...rest] = String(it.day || "").trim().split(/\s+/);
+        // The event's photo (if it has one) sits at the right end of the row.
+        const pic = it.image ? a?.items?.get(it.image) : null;
+        const ps = rowH - 20, px = W - 90 - 10 - ps;
+        const bw = Math.min(190, rowH * 1.25), bx = 90, tx = bx + bw + 30, maxW = (pic ? px - 20 : W - 90 - 30) - tx;
+        const dayB = textBlock(g, wd || "", { font: `{s}px ${DISPLAY}`, size: Math.min(48, rowH * 0.34), maxLines: 1, upper: true, color: L.pillText, x: bx + bw / 2, maxW: bw - 20 });
+        const dateB = rest.length ? textBlock(g, rest.join(" "), { font: `700 {s}px ${BODY}`, size: Math.min(30, rowH * 0.2), maxLines: 1, color: L.pillText, x: bx + bw / 2, maxW: bw - 20 }) : null;
+        const nameB = textBlock(g, it.name, { font: `{s}px ${DISPLAY}`, size: Math.min(50, rowH * (rowH >= 115 ? 0.27 : 0.32)), maxLines: rowH >= 115 ? 2 : 1, lineH: 1.05, min: 26, upper: true, color: L.rowName, align: "left", x: tx, maxW });
+        const timeB = it.time && rowH >= 100 ? textBlock(g, it.time, { font: `700 {s}px ${BODY}`, size: Math.min(32, rowH * 0.21), maxLines: 1, color: L.rowDesc, align: "left", x: tx, maxW }) : null;
+        enter(g, t, at, () => {
+          roundRect(g, bx, ry, W - 180, rowH, 34); g.fillStyle = L.row; g.fill(); g.lineWidth = 5; g.strokeStyle = L.rowLine; g.stroke();
+          roundRect(g, bx + 10, ry + 10, bw - 20, rowH - 20, 26); g.fillStyle = L.pill; g.fill();
+          const dh = (dayB?.h || 0) + (dateB ? dateB.h + 4 : 0);
+          let dy = ry + (rowH - dh) / 2; dayB?.draw(dy); if (dateB) dateB.draw(dy + (dayB?.h || 0) + 4);
+          const th = (nameB?.h || 0) + (timeB ? timeB.h + 8 : 0);
+          const ty = ry + (rowH - th) / 2; nameB?.draw(ty); if (timeB) timeB.draw(ty + (nameB?.h || 0) + 8);
+          if (pic) { g.save(); roundRect(g, px, ry + 10, ps, ps, 26); g.clip(); cover(g, pic, px, ry + 10, ps, ps); g.restore(); }
+        }, { dist: 0 });
+      });
+      if (!items.length) enter(g, t, 1.2, () => textBlock(g, "Nothing on the calendar yet", bodyStyle(L))?.draw(TOP + 400));
     },
   },
   staff: {

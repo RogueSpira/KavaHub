@@ -123,7 +123,7 @@ function shrink(img, max = 1500) {
 export function mount(el, ctx) {
   let tv = null;
   const reel = { template: "drink", look: "cream", seconds: 10, data: {} };
-  const assets = { logo: null, manny: null, photo: null };
+  const assets = { logo: null, manny: null, photo: null, items: new Map() }; // items: list-row photos, by URL
   let photoUrl = "", photoSource = "";
   Promise.all([loadImg(LOGO), loadImg(MANNY)]).then(([l, m]) => { assets.logo = l; assets.manny = m; });
   document.fonts?.load?.(`80px ${DISPLAY.split(",")[0]}`).catch(() => {});
@@ -131,12 +131,10 @@ export function mount(el, ctx) {
   const fillDefaults = () => {
     const tpl = TEMPLATES[reel.template];
     reel.data = Object.fromEntries(tpl.fields.map(([k, , ex]) => [k, ex]));
-    if (tpl.list) reel.data.items = [
-      { name: "Mango Tango", desc: "Raspberry, mango", price: "$10" },
-      { name: "Hibiscus Lemonade", desc: "Hibiscus, lemon, agave", price: "$10" },
-      { name: "Pina Colada", desc: "Pineapple, coconut creme", price: "$11" },
-    ];
+    if (tpl.list) reel.data.items = structuredClone(tpl.list.sample || []);
     reel.data.end = tpl.end;
+    if (reel.template === "week" && tv) fillWeek();
+    loadRowImages();
     setPhoto(null);
   };
 
@@ -181,20 +179,42 @@ export function mount(el, ctx) {
       oninput: (e) => { reel.data[k] = e.target.value; } };
     return kind === "textarea" ? h("textarea", { ...attrs, rows: "2" }, reel.data[k] || "") : h("input", { ...attrs, value: reel.data[k] || "" });
   }
+  // Editable rows for list templates. spec.top: inputs side by side; spec.below: one under them.
   function listEditor(spec) {
     const box = h("div", { class: "mm-edit" });
+    const inp = (it, [k, placeholder, max, cls]) => h("input", { class: `input${cls ? ` ${cls}` : ""}`, value: it[k] || "", maxlength: String(max), placeholder, oninput: (e) => { it[k] = e.target.value; } });
+    const blank = () => Object.fromEntries([...spec.top, spec.below].map(([k]) => [k, ""]));
     const paint = () => {
       clear(box);
       reel.data.items.forEach((it, i) => add(box, h("div", { class: "mm-item-row" },
-        h("div", { class: "mm-item-top" },
-          h("input", { class: "input", value: it.name || "", maxlength: "30", placeholder: "Drink", oninput: (e) => { it.name = e.target.value; } }),
-          h("input", { class: "input mm-price", value: it.price || "", maxlength: "8", placeholder: "$ Price", oninput: (e) => { it.price = e.target.value; } }),
+        h("div", { class: "mm-item-top" }, spec.top.map((c) => inp(it, c)),
+          spec.photo ? rowPhoto(it, paint) : null,
           h("button", { class: "icon-btn small", type: "button", "aria-label": "Remove", onclick: () => { reel.data.items.splice(i, 1); paint(); } }, "✕")),
-        h("input", { class: "input", value: it.desc || "", maxlength: "50", placeholder: "Short description (optional)", oninput: (e) => { it.desc = e.target.value; } }))));
-      if (reel.data.items.length < spec.max) add(box, h("button", { class: "btn small", type: "button", onclick: () => { reel.data.items.push({ name: "", desc: "", price: "" }); paint(); } }, "+ Add a drink"));
+        inp(it, spec.below))));
+      if (reel.data.items.length < spec.max) add(box, h("button", { class: "btn small", type: "button", onclick: () => { reel.data.items.push(blank()); paint(); } }, spec.addLabel));
     };
     paint();
     return field(spec.label, box);
+  }
+  // A row's photo (e.g. the event's flyer): tap to add or change, × to remove.
+  function rowPhoto(it, repaint) {
+    const fileIn = h("input", { type: "file", accept: "image/*", hidden: true, onchange: (e) => {
+      const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+      it.image = URL.createObjectURL(f); loadRowImages(); repaint();
+    } });
+    return h("span", { class: "rm-rowpic" },
+      h("button", { type: "button", class: "rm-rowpic-btn", title: it.image ? "Change photo" : "Add a photo", onclick: () => fileIn.click() },
+        it.image ? h("img", { src: it.image, alt: "" }) : "📷"),
+      it.image ? h("button", { type: "button", class: "rm-rowpic-x", "aria-label": "Remove photo", onclick: () => { it.image = ""; repaint(); } }, "×") : null, fileIn);
+  }
+  // Load (and shrink) every row photo so the preview and the video can draw them.
+  function loadRowImages() {
+    for (const it of reel.data.items || []) {
+      const src = it.image;
+      if (!src || assets.items.has(src) || !sameSite(src)) continue;
+      assets.items.set(src, null);
+      loadImg(src).then((img) => { if (img) assets.items.set(src, shrink(img, 500)); else assets.items.delete(src); });
+    }
   }
   function photoPicker() {
     const wrap = h("div", { class: "tv-photo" });
@@ -216,6 +236,25 @@ export function mount(el, ctx) {
   }
 
   /* ---------- pull from TV Screens ---------- */
+  // "This week at Mandarin": the next 7 days of events, one line per day (same-day events joined).
+  function fillWeek() {
+    const from = businessDate();
+    const to = new Date(from); to.setDate(from.getDate() + 6);
+    const short = (d) => d.toLocaleDateString([], { month: "short", day: "numeric" });
+    reel.data.kicker = `${short(from)} – ${short(to)}`;
+    const byDay = new Map();
+    for (const o of occurrences(withDefaults("events", tv?.events).items, from, 7)) {
+      if (!byDay.has(o.key)) byDay.set(o.key, { date: o.date, evs: [] });
+      byDay.get(o.key).evs.push(o.ev);
+    }
+    reel.data.items = [...byDay.values()].slice(0, 7).map(({ date, evs }) => ({
+      image: evs.map((e) => e.image).find(sameSite) || "",
+      day: `${date.toLocaleDateString([], { weekday: "short" })} ${date.getMonth() + 1}/${date.getDate()}`,
+      name: evs.map((e) => e.title).join(" + "),
+      time: [...new Set(evs.map((e) => e.time).filter(Boolean))].join(" · "),
+    }));
+  }
+
   function paintPulls() {
     clear(pullBox);
     if (!tv) return;
@@ -237,6 +276,9 @@ export function mount(el, ctx) {
         reel.data.desc = (ev.details || (theme ? `This month's theme: ${theme}` : "") || "").replace(/\*\*/g, "");
         if (ev.image && sameSite(ev.image)) setPhoto(ev.image, "hub");
       });
+    } else if (t === "week") {
+      add(pullBox, h("div", { class: "card" }, h("button", { class: "btn small", type: "button", onclick: () => { fillWeek(); loadRowImages(); build(); restart(); } }, "↻ Fill from this week's events"),
+        h("p", { class: "muted small", style: { marginTop: "8px" } }, "Pulls the next 7 days from TV Screens. Edit or remove any line after.")));
     } else if (t === "specials") {
       const sp = withDefaults("specials", tv.specials).items || [];
       if (sp.length) add(pullBox, h("div", { class: "card" }, h("button", { class: "btn small", type: "button", onclick: () => {
@@ -313,6 +355,9 @@ export function mount(el, ctx) {
   }
 
   fillDefaults(); build(); raf = requestAnimationFrame(loop);
-  const stopTv = ctx.api.watchTv((d) => { tv = d || {}; paintPulls(); });
+  const stopTv = ctx.api.watchTv((d) => {
+    const first = !tv; tv = d || {};
+    if (first && reel.template === "week") { fillWeek(); loadRowImages(); build(); } else paintPulls();
+  });
   return () => { cancelAnimationFrame(raf); stopTv(); if (photoSource === "upload" && photoUrl) URL.revokeObjectURL(photoUrl); };
 }

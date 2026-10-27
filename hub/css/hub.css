@@ -670,6 +670,8 @@ button.cl-row:active { transform: scale(.99); }
 .mm-item-top .input:first-child { flex: 1 1 200px; min-width: 0; font-weight: 700; }
 .mm-item-top .mm-price { flex: 0 0 104px; width: 104px; }
 .mm-item-top .icon-btn:first-of-type { margin-left: auto; }
+.mm-item-top .input.rm-day:first-child { flex: 0 0 130px; width: 130px; font-weight: 700; }
+.mm-item-top .input.rm-grow { flex: 1 1 160px; min-width: 0; }
 .mm-prices { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .mm-prices label { display: grid; gap: 2px; font-size: 12px; color: var(--muted); }
 .mm-prices .input { width: 82px; min-height: 44px; padding: 0 8px; }
@@ -691,6 +693,7 @@ button.cl-row:active { transform: scale(.99); }
 .mm-mobile-tabs { display: none; }
 @media (max-width: 900px) {
   .mm-item-top .input:first-child { flex-basis: 100%; }
+  .mm-item-top .input.rm-day:first-child { flex: 0 0 120px; }
   .mm-tool { grid-template-columns: 1fr; }
   .mm-preview { position: static; }
   .mm-mobile-tabs { display: flex; }
@@ -719,3 +722,8 @@ button.cl-row:active { transform: scale(.99); }
 .rm-look { display: inline-flex; align-items: center; gap: 8px; min-height: 46px; padding: 0 14px; border-radius: 999px; border: 1.5px solid var(--line); background: transparent; font-family: var(--f-label); font-weight: 600; }
 .rm-look.on { border-color: var(--orange); background: color-mix(in srgb, var(--orange) 16%, transparent); }
 .rm-swatch { width: 22px; height: 22px; border-radius: 50%; border: 2px solid rgba(255, 243, 224, .6); }
+/* Reel Maker: a list row's photo */
+.rm-rowpic { position: relative; flex: 0 0 44px; }
+.rm-rowpic-btn { width: 44px; height: 44px; border-radius: 10px; border: 1.5px dashed var(--line); background: transparent; color: var(--cream-dim); font-size: 18px; padding: 0; overflow: hidden; display: grid; place-items: center; }
+.rm-rowpic-btn img { width: 100%; height: 100%; object-fit: cover; }
+.rm-rowpic-x { position: absolute; top: -7px; right: -7px; width: 20px; height: 20px; border-radius: 50%; border: 0; background: var(--ink); color: var(--cream); font-size: 13px; line-height: 20px; padding: 0; }
