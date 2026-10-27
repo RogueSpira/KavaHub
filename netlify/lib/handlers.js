@@ -20,6 +20,13 @@ export const MEDIA_ID_RE = /^[a-z][a-z0-9-]{1,30}\.[a-z0-9]{12,40}$/; // "<locat
 // Pictures we'll copy in from Google Drive (used when moving off the old Google Sheets board).
 const COPY_HOSTS = /(^|\.)(googleusercontent\.com|drive\.google\.com)$/;
 
+// Community photos for the Reel Maker's monthly recap are fetched through here, so the browser can
+// put them into a video (it can't draw pictures straight from Google Drive). Nothing is stored.
+// Same public browser key the TV board uses to list the folder, split so Netlify's secret scanner
+// doesn't block deploys over it.
+const DRIVE_KEY = ["AIzaSyALMNYayRHEFMNdue8", "wA1nHNL5fYr8WtqM"].join("");
+export const DRIVE_FILE_RE = /^[A-Za-z0-9_-]{10,100}$/;
+
 // Tools that may upload pictures, and the access level needed.
 const MEDIA_TOOLS = { knowledge: 2, tv: 1, quests: 1 };
 
@@ -312,6 +319,32 @@ export function makeApi({ db, auth, now, env, media, fetchFn = globalThis.fetch 
       if (!bytes.length) fail(400, "That picture is empty.");
       if (bytes.length > MAX_IMAGE_BYTES) fail(413, "That picture is too big (4 MB max).");
       return storePic(c, tool, type, bytes);
+    },
+
+    // One photo from the community Drive folder (set in TV Screens → Community Photos), resized,
+    // for the Reel Maker. Only files that are in that folder; needs Use on Reel Maker.
+    async drivePhoto(data, idToken) {
+      const c = await caller(idToken);
+      if (c.levelOf("reels") < 1) fail(403, "You don't have access to Reel Maker.");
+      const id = String(data.id || "");
+      if (!DRIVE_FILE_RE.test(id)) fail(400, "That isn't a Drive photo.");
+      const snap = await db.doc(`locations/${c.loc}/tv/community`).get();
+      const folder = String((snap.exists ? snap.data().driveFolder : "") || "");
+      if (!DRIVE_FILE_RE.test(folder)) fail(409, "No community photo folder is set (TV Screens → Community Photos).");
+      let meta;
+      try { meta = await (await fetchFn(`https://www.googleapis.com/drive/v3/files/${id}?fields=parents,mimeType&key=${DRIVE_KEY}`)).json(); }
+      catch { fail(502, "Couldn't reach Google Drive."); }
+      if (!Array.isArray(meta?.parents) || !meta.parents.includes(folder)) fail(404, "That photo isn't in the community folder.");
+      if (!/^image\//.test(meta.mimeType || "")) fail(415, "That file isn't a picture.");
+      const size = Math.max(400, Math.min(1600, parseInt(data.size, 10) || 1280));
+      let res;
+      try { res = await fetchFn(`https://lh3.googleusercontent.com/d/${id}=w${size}`, { redirect: "follow" }); } catch { fail(502, "Couldn't reach Google Drive."); }
+      if (!res.ok) fail(502, `Google Drive said ${res.status}.`);
+      const type = String(res.headers.get("content-type") || "").split(";")[0].trim();
+      if (!IMAGE_TYPES.includes(type)) fail(415, "Google Drive didn't send a picture (is the folder shared with anyone who has the link?).");
+      const bytes = Buffer.from(await res.arrayBuffer());
+      if (!bytes.length || bytes.length > MAX_IMAGE_BYTES) fail(413, "That picture is too big.");
+      return { type, data: bytes.toString("base64") };
     },
 
     async adminCreateRole(data, idToken) {

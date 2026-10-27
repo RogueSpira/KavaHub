@@ -310,6 +310,16 @@ export async function deleteArticle(aid) { await wait(100); const i = kb.findInd
 export async function uploadImage(_tool, dataUrl) { await wait(300); return dataUrl; }
 export async function copyImage(_tool, url) { await wait(150); return url; }
 
+/* ---------- community photos (demo: a few local pictures stand in for the Drive folder) ---------- */
+const DEMO_PICS = ["/board/assets/christian.jpg", "/board/assets/drinks/upnext.jpg", "/board/assets/crew/wheatyn.jpg", "/board/assets/drinks/welcome.jpg",
+  "/board/assets/crew/daniel.jpg", "/board/assets/drinks/qr.jpg", "/board/assets/crew/josh.jpg", "/board/assets/mandarin-pattern.jpg"];
+export async function listDrivePhotos(_folder, from, to) {
+  await wait(250);
+  const span = Math.max(1, Math.min(Date.now(), to) - from);
+  return Array.from({ length: 18 }, (_, i) => ({ id: `demo${String(i).padStart(8, "0")}`, name: `photo-${i + 1}.jpg`, at: new Date(+from + (span * i) / 18), thumb: DEMO_PICS[i % DEMO_PICS.length] }));
+}
+export async function drivePhoto(id) { await wait(120); return DEMO_PICS[Number(id.slice(4)) % DEMO_PICS.length]; }
+
 /* ---------- TV Screens ---------- */
 const tv = {};
 {

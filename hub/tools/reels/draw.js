@@ -403,6 +403,49 @@ export const TEMPLATES = {
       if (!items.length) enter(g, t, 1.2, () => textBlock(g, "Nothing on the calendar yet", bodyStyle(L))?.draw(TOP + 400));
     },
   },
+  recap: {
+    name: "Monthly recap", icon: "📸",
+    fields: [["kicker", "Small line on top", "Community recap"], ["title", "Title", "This Month at Mandarin"]],
+    photo: null, end: "Thanks for hanging with us", lengths: [10, 15, 20, 30], seconds: 20,
+    // A pile of polaroids: each community photo drops onto the stack in turn, slightly tilted.
+    draw(g, L, t, d, a, D = 20) {
+      const kicker = textBlock(g, d.kicker, kickerStyle(L));
+      const title = textBlock(g, d.title, titleStyle(L, 88));
+      let y = TOP - 10;
+      if (kicker) { enter(g, t, 0.4, () => kicker.draw(y)); y += kicker.h + 18; }
+      if (title) { const yy = y; enter(g, t, 0.6, () => title.draw(yy)); y += title.h + 40; }
+      const pics = (d.photos || []).map((k) => a?.items?.get(k)).filter(Boolean);
+      if (!pics.length) { enter(g, t, 1, () => textBlock(g, "Pick photos from the community folder", bodyStyle(L))?.draw(y + 300)); return; }
+      // Card size: as big as fits between the title and the footer.
+      const room = BOTTOM + 40 - y, pad = 30, foot = 120;
+      const cardH = Math.min(1000, room), cardW = Math.min(800, (cardH - pad - foot) * 0.92 + pad * 2);
+      const cx = W / 2, cy = y + cardH / 2;
+      const start = 1.1, end = Math.max(start + 1, D - 1.8), per = (end - start) / pics.length;
+      const tilt = (i) => (((i * 37) % 11) - 5) * 0.022;
+      const drift = (i) => (((i * 53) % 9) - 4) * 9;
+      const shown = pics.map((_, i) => start + i * per).filter((at) => t >= at).length;
+      // The last few photos stay visible underneath; the newest drops in on top.
+      for (let i = Math.max(0, shown - 4); i < shown; i++) {
+        const p = clamp((t - (start + i * per)) / 0.45);
+        const s = 1 + (1 - easeOut(p)) * 0.25;
+        g.save();
+        g.globalAlpha = Math.min(1, p * 2.2);
+        g.translate(cx + drift(i), cy + (1 - easeOut(p)) * -60); g.rotate(tilt(i)); g.scale(s, s);
+        g.shadowColor = "rgba(0,0,0,.3)"; g.shadowBlur = 40 * PX; g.shadowOffsetY = 14 * PX;
+        roundRect(g, -cardW / 2, -cardH / 2, cardW, cardH, 14); g.fillStyle = "#FFFDF7"; g.fill();
+        g.shadowColor = "transparent";
+        const pw = cardW - pad * 2, ph = cardH - pad - foot;
+        g.save(); roundRect(g, -cardW / 2 + pad, -cardH / 2 + pad, pw, ph, 6); g.clip();
+        cover(g, pics[i], -cardW / 2 + pad, -cardH / 2 + pad, pw, ph, 1.02 + Math.min(0.05, Math.max(0, t - (start + i * per)) * 0.02));
+        g.restore();
+        // A strip of orange tape on top, and the handle on the polaroid's chin.
+        g.fillStyle = "rgba(243,111,3,.55)"; g.save(); g.translate(0, -cardH / 2 + 4); g.rotate(-0.06); g.fillRect(-90, -22, 180, 44); g.restore();
+        g.font = `700 38px ${BODY}`; g.textAlign = "center"; g.textBaseline = "middle"; g.fillStyle = B.navy;
+        g.fillText("@kavaandco.mandarin", 0, cardH / 2 - foot / 2);
+        g.restore();
+      }
+    },
+  },
   staff: {
     name: "Meet your kavatender", icon: "🧑‍🍳",
     fields: [["kicker", "Small line on top", "Meet your kavatender"], ["title", "Name", "Your Name"], ["desc", "Fun fact / favorite drink", "Ask me about my favorite drink!"]],
@@ -434,7 +477,7 @@ export function drawFrame(g, t, reel, assets, scale = 1) {
   g.save();
   background(g, L, t);
   header(g, L, t, assets);
-  tpl.draw(g, L, t, reel.data || {}, assets);
+  tpl.draw(g, L, t, reel.data || {}, assets, D);
   footer(g, L, t);
   manny(g, t, assets, D);
   endCard(g, L, t, assets, D, reel.data?.end || tpl.end);

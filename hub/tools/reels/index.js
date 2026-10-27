@@ -125,6 +125,9 @@ export function mount(el, ctx) {
   const reel = { template: "drink", look: "cream", seconds: 10, data: {} };
   const assets = { logo: null, manny: null, photo: null, items: new Map() }; // items: list-row photos, by URL
   let photoUrl = "", photoSource = "";
+  // Monthly recap: which month, the photos added to the community folder that month, and which are in.
+  // Early in a month (first week) it starts on last month, so the recap is ready to go.
+  const recap = { month: (() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth() - (d.getDate() <= 7 ? 1 : 0), 1); })(), list: null, error: "", loading: false };
   Promise.all([loadImg(LOGO), loadImg(MANNY)]).then(([l, m]) => { assets.logo = l; assets.manny = m; });
   document.fonts?.load?.(`80px ${DISPLAY.split(",")[0]}`).catch(() => {});
 
@@ -133,7 +136,10 @@ export function mount(el, ctx) {
     reel.data = Object.fromEntries(tpl.fields.map(([k, , ex]) => [k, tpl.blank ? "" : ex]));
     if (tpl.list) reel.data.items = structuredClone(tpl.list.sample || []);
     reel.data.end = tpl.end;
+    const lengths = tpl.lengths || LENGTHS;
+    if (!lengths.includes(reel.seconds)) reel.seconds = tpl.seconds || 10;
     if (reel.template === "week" && tv) fillWeek();
+    if (reel.template === "recap") { reel.data.photos = []; recap.list = null; if (tv) loadRecapMonth(); }
     loadRowImages();
     setPhoto(null);
   };
@@ -165,7 +171,7 @@ export function mount(el, ctx) {
         field("Background", h("div", { class: "rm-looks" }, Object.entries(LOOKS).map(([k, l]) => h("button", { type: "button", class: `rm-look${k === reel.look ? " on" : ""}`,
           onclick: (e) => { reel.look = k; e.currentTarget.parentElement.querySelectorAll(".rm-look").forEach((b) => b.classList.toggle("on", b === e.currentTarget)); restart(); } },
           h("span", { class: "rm-swatch", style: { background: l.swatch } }), l.name)))),
-        field("Length", seg(LENGTHS.map((s) => ({ value: s, label: `${s} sec` })), reel.seconds, (v) => { reel.seconds = v; restart(); }))),
+        field("Length", seg((tpl.lengths || LENGTHS).map((s) => ({ value: s, label: `${s} sec` })), reel.seconds, (v) => { reel.seconds = v; restart(); }))),
       pullBox,
       h("div", { class: "card form" },
         tpl.fields.map(([k, label, ex]) => field(label, input(k, k === "desc" ? "textarea" : "text", ex))),
@@ -235,6 +241,87 @@ export function mount(el, ctx) {
     if (src) loadImg(src).then((img) => { if (photoUrl === src) assets.photo = shrink(img); });
   }
 
+  /* ---------- monthly recap: photos from the community Drive folder ---------- */
+  const MAX_RECAP = 15;
+  const monthName = (d) => d.toLocaleDateString([], { month: "long" });
+  function recapFolder() { return withDefaults("community", tv?.community).driveFolder || (ctx.api.mode === "demo" ? "demo" : ""); }
+  async function loadRecapMonth() {
+    const folder = recapFolder();
+    recap.list = null; recap.error = "";
+    if (!folder) { recap.error = "No community photo folder is set yet. Add it in TV Screens → Community Photos."; paintPulls(); return; }
+    recap.loading = true; paintPulls();
+    // Title follows the month unless someone changed it.
+    if (!reel.data.title || /^(This Month|[A-Z][a-z]+) at Mandarin$/.test(reel.data.title)) { reel.data.title = `${monthName(recap.month)} at Mandarin`; build(); }
+    const m = recap.month, from = new Date(m.getFullYear(), m.getMonth(), 1), to = new Date(m.getFullYear(), m.getMonth() + 1, 1);
+    try {
+      const list = await ctx.api.listDrivePhotos(folder, from, to);
+      if (recap.month !== m) return;
+      recap.list = list;
+      // Start with up to 15, spread across the month.
+      const step = list.length / Math.min(MAX_RECAP, list.length || 1);
+      reel.data.photos = list.length <= MAX_RECAP ? list.map((p) => `drive:${p.id}`) : Array.from({ length: MAX_RECAP }, (_, i) => `drive:${list[Math.floor(i * step)].id}`);
+      loadRecapPhotos();
+    } catch (e) { recap.error = `Couldn't read the community folder: ${e.message}`; }
+    recap.loading = false; paintPulls(); restart();
+  }
+  // Fetch the chosen photos (3 at a time) so the preview and the video can draw them.
+  let recapQueue = Promise.resolve();
+  function loadRecapPhotos() {
+    const todo = (reel.data.photos || []).filter((k) => !assets.items.has(k));
+    for (const k of todo) assets.items.set(k, null);
+    const run = async (k) => {
+      try {
+        const src = await ctx.api.drivePhoto(k.slice(6));
+        const img = await loadImg(src);
+        if (img) assets.items.set(k, shrink(img, 1100)); else assets.items.delete(k);
+        if (src.startsWith("blob:")) URL.revokeObjectURL(src);
+      } catch (e) { assets.items.delete(k); console.warn("[reels] photo", k, e.message); }
+      paintRecapCount();
+    };
+    const lanes = [0, 1, 2].map((n) => todo.filter((_, i) => i % 3 === n));
+    recapQueue = Promise.all(lanes.map(async (lane) => { for (const k of lane) await run(k); }));
+    paintRecapCount();
+  }
+  const recapCount = h("span", { class: "muted small" });
+  function paintRecapCount() {
+    const sel = reel.data.photos || [];
+    const ready = sel.filter((k) => assets.items.get(k)).length;
+    recapCount.textContent = `${sel.length} of ${MAX_RECAP} picked${ready < sel.length ? ` · loading ${ready}/${sel.length}…` : ""}`;
+  }
+  function recapPicker() {
+    const months = Array.from({ length: 6 }, (_, i) => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth() - i, 1); });
+    const monthSel = h("select", { class: "input", onchange: (e) => { recap.month = months[Number(e.target.value)]; loadRecapMonth(); } },
+      months.map((d, i) => h("option", { value: i, selected: d.getTime() === recap.month.getTime() }, d.toLocaleDateString([], { month: "long", year: "numeric" }))));
+    const grid = h("div", { class: "rm-recap-grid" });
+    const paintGrid = () => {
+      clear(grid);
+      for (const p of recap.list || []) {
+        const k = `drive:${p.id}`, on = reel.data.photos.includes(k);
+        add(grid, h("button", { type: "button", class: `rm-recap-pic${on ? " on" : ""}`, title: p.at.toLocaleDateString(),
+          onclick: () => {
+            const sel = reel.data.photos;
+            if (on) sel.splice(sel.indexOf(k), 1);
+            else if (sel.length >= MAX_RECAP) { ctx.toast(`Up to ${MAX_RECAP} photos. Take one out first.`, "err"); return; }
+            else { sel.push(k); sel.sort((a, b) => order(a) - order(b)); }
+            loadRecapPhotos(); paintGrid(); restart();
+          } }, h("img", { src: p.thumb, alt: "", loading: "lazy" }), on ? h("span", { class: "rm-recap-n" }, reel.data.photos.indexOf(k) + 1) : null));
+      }
+    };
+    const order = (k) => (recap.list || []).findIndex((p) => `drive:${p.id}` === k);
+    paintGrid(); paintRecapCount();
+    const list = recap.list || [];
+    return h("div", { class: "card form" },
+      field("Month", monthSel, "Photos added to the community Drive folder that month."),
+      recap.error ? h("p", { class: "modal-err" }, recap.error)
+        : recap.loading ? h("p", { class: "loading" }, "Looking in the folder…")
+        : !list.length ? h("p", { class: "muted" }, "No photos were added to the folder that month.")
+        : [h("div", { class: "rm-recap-bar" }, recapCount,
+            h("button", { class: "btn small ghost", type: "button", onclick: () => { reel.data.photos = []; paintGrid(); paintRecapCount(); restart(); } }, "Clear"),
+            h("button", { class: "btn small ghost", type: "button", onclick: () => { reel.data.photos = list.slice(0, MAX_RECAP).map((p) => `drive:${p.id}`); loadRecapPhotos(); paintGrid(); restart(); } }, `First ${Math.min(MAX_RECAP, list.length)}`)),
+          h("p", { class: "muted small" }, `Tap photos to put them in or take them out (up to ${MAX_RECAP}). They play in the order they were added.`),
+          grid]);
+  }
+
   /* ---------- pull from TV Screens ---------- */
   // "This week at Mandarin": the next 7 days of events, one line per day (same-day events joined).
   function fillWeek() {
@@ -276,6 +363,8 @@ export function mount(el, ctx) {
         reel.data.desc = (ev.details || (theme ? `This month's theme: ${theme}` : "") || "").replace(/\*\*/g, "");
         if (ev.image && sameSite(ev.image)) setPhoto(ev.image, "hub");
       });
+    } else if (t === "recap") {
+      add(pullBox, recapPicker());
     } else if (t === "week") {
       add(pullBox, h("div", { class: "card" }, h("button", { class: "btn small", type: "button", onclick: () => { fillWeek(); loadRowImages(); build(); restart(); } }, "↻ Fill from this week's events"),
         h("p", { class: "muted small", style: { marginTop: "8px" } }, "Pulls the next 7 days from TV Screens. Edit or remove any line after.")));
@@ -323,6 +412,15 @@ export function mount(el, ctx) {
   /* ---------- export ---------- */
   async function makeVideo() {
     if (busy) return;
+    if (reel.template === "recap") {
+      const sel = reel.data.photos || [];
+      if (!sel.length) { ctx.toast("Pick some photos first.", "err"); return; }
+      if (sel.some((k) => !assets.items.get(k))) {
+        status.textContent = "Waiting for the photos to finish loading…";
+        await recapQueue;
+        if (sel.some((k) => !assets.items.get(k))) { ctx.toast("Some photos couldn't load. Take them out or try again.", "err"); status.textContent = ""; return; }
+      }
+    }
     if (assets.photo == null && photoUrl) await new Promise((r) => setTimeout(r, 300));
     await document.fonts?.ready;
     busy = true; makeBtn.disabled = true; playBtn.disabled = true; clear(result);
@@ -357,7 +455,9 @@ export function mount(el, ctx) {
   fillDefaults(); build(); raf = requestAnimationFrame(loop);
   const stopTv = ctx.api.watchTv((d) => {
     const first = !tv; tv = d || {};
-    if (first && reel.template === "week") { fillWeek(); loadRowImages(); build(); } else paintPulls();
+    if (first && reel.template === "week") { fillWeek(); loadRowImages(); build(); }
+    else if (first && reel.template === "recap") loadRecapMonth();
+    else paintPulls();
   });
   return () => { cancelAnimationFrame(raf); stopTv(); if (photoSource === "upload" && photoUrl) URL.revokeObjectURL(photoUrl); };
 }

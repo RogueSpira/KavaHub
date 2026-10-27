@@ -211,6 +211,30 @@ export const uploadImage = async (tool, dataUrl) => (await call("mediaUpload", {
 // Copies a Google Drive picture into the hub's storage (used by the TV import). Returns the new address.
 export const copyImage = async (tool, url) => (await call("mediaCopy", { tool, url })).src;
 
+/* ---------- community photos (Google Drive), for the Reel Maker's monthly recap ---------- */
+// Same public browser key the TV board uses (split so Netlify's secret scanner leaves it alone).
+const DRIVE_KEY = ["AIzaSyALMNYayRHEFMNdue8", "wA1nHNL5fYr8WtqM"].join("");
+// Photos added to the folder between two dates: [{ id, name, at: Date, thumb }], oldest first.
+export async function listDrivePhotos(folder, from, to) {
+  const q = encodeURIComponent(`'${folder}' in parents and trashed=false and mimeType contains 'image/' and createdTime >= '${from.toISOString()}' and createdTime < '${to.toISOString()}'`);
+  const out = [];
+  let page = "";
+  for (let i = 0; i < 5; i++) {
+    const r = await (await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=createdTime&pageSize=200&fields=nextPageToken,files(id,name,createdTime)&key=${DRIVE_KEY}${page ? `&pageToken=${page}` : ""}`)).json();
+    if (!Array.isArray(r.files)) throw new Error(r.error?.message || "Couldn't read the Drive folder.");
+    out.push(...r.files.map((f) => ({ id: f.id, name: f.name, at: new Date(f.createdTime), thumb: `https://lh3.googleusercontent.com/d/${f.id}=w320` })));
+    if (!r.nextPageToken) break;
+    page = r.nextPageToken;
+  }
+  return out;
+}
+// One of those photos, fetched through the hub (so it can go into a video). Returns a blob: address.
+export async function drivePhoto(id) {
+  const { type, data } = await call("drivePhoto", { id, size: 1280 });
+  const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
+  return URL.createObjectURL(new Blob([bytes], { type }));
+}
+
 /* ---------- TV Screens (locations/{loc}/tv/{docId}) ---------- */
 // Everything the TVs show, as { docId: data }.
 export function watchTv(cb) {

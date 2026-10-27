@@ -9,6 +9,10 @@ function setup() {
   const fetched = [];
   const fetchFn = async (url) => {
     fetched.push(url);
+    if (url.startsWith("https://www.googleapis.com/drive/v3/files/")) {
+      const id = url.split("/files/")[1].split("?")[0];
+      return { ok: true, status: 200, json: async () => (id.startsWith("inFolder") ? { parents: ["FOLDER12345"], mimeType: id.includes("Doc") ? "application/pdf" : "image/jpeg" } : { parents: ["otherFolder99"], mimeType: "image/jpeg" }) };
+    }
     const pic = url.includes("notpic") ? null : Buffer.from("drive-jpeg");
     return { ok: !url.includes("missing"), status: url.includes("missing") ? 404 : 200, arrayBuffer: async () => (pic || Buffer.from("<html>")),
       headers: { get: (k) => (k === "content-type" ? (pic ? "image/jpeg" : "text/html; charset=utf-8") : null) } };
@@ -237,4 +241,18 @@ test("copying a Google Drive picture into the hub", async () => {
   await rejects(t.api("mediaCopy", { tool: "tv", url: "https://lh3.googleusercontent.com/d/notpic" }, t.owner), 415);
   await rejects(t.api("mediaCopy", { tool: "tv", url: "https://lh3.googleusercontent.com/d/abc" }), 401);
   assert.equal(t.fetched.length, 3);
+});
+
+test("drivePhoto: only photos in the community folder, for people with Reel Maker", async () => {
+  const t = await bootstrapped();
+  await rejects(t.api("drivePhoto", { id: "inFolderPhoto1" }, t.owner), 409); // no folder set yet
+  await t.db.doc("locations/mandarin/tv/community").set({ driveFolder: "FOLDER12345" });
+  const pic = await t.api("drivePhoto", { id: "inFolderPhoto1" }, t.owner);
+  assert.equal(pic.type, "image/jpeg");
+  assert.equal(Buffer.from(pic.data, "base64").toString(), "drive-jpeg");
+  assert.ok(t.fetched.some((u) => u.startsWith("https://lh3.googleusercontent.com/d/inFolderPhoto1=w")));
+  await rejects(t.api("drivePhoto", { id: "elsewherePhoto1" }, t.owner), 404);
+  await rejects(t.api("drivePhoto", { id: "inFolderDoc123" }, t.owner), 415);
+  await rejects(t.api("drivePhoto", { id: "../../etc" }, t.owner), 400);
+  await rejects(t.api("drivePhoto", { id: "inFolderPhoto1" }), 401);
 });
