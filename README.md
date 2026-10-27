@@ -145,6 +145,13 @@ loaded and which settings are present (no secret values are shown).
 - **App and server changes:** push to GitHub and Netlify redeploys automatically.
 - **`firestore.rules` changes:** paste into Firebase console → Firestore → Rules → Publish.
 
+## Menu Maker
+
+Quick express menus for event nights. Start from the Express template (lattes by size + signature
+cocktails) or a blank one, type the drinks, descriptions and prices, and hit Print. It comes out in the
+Kava & Co. look on a full page, or two half-pages per sheet with a cut line. Text sizes itself to fill
+one page. Menus are saved so they can be reused or copied.
+
 ## Side Quests
 
 Extra jobs outside the daily lists. Kavatenders tap **I did it** (with an optional photo and note);

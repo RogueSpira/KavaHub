@@ -9,9 +9,10 @@
 import tv from "./tv/manifest.js";
 import checklists from "./checklists/manifest.js";
 import quests from "./quests/manifest.js";
+import menus from "./menus/manifest.js";
 import suggestions from "./suggestions/manifest.js";
 import knowledge from "./knowledge/manifest.js";
 import admin from "./admin/manifest.js";
 
 // Shelved for now (folders kept): ./inventory, ./complaints
-export const TOOLS = [tv, checklists, quests, knowledge, suggestions, admin];
+export const TOOLS = [tv, checklists, quests, menus, knowledge, suggestions, admin];

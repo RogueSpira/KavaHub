@@ -575,3 +575,94 @@ button.cl-row:active { transform: scale(.99); }
   .sq-wb-diff { grid-column: 1 / -1; text-align: left; order: 4; }
   .sq-wb-diff:empty { display: none; }
 }
+
+/* ===================== Menu Maker: the printed page ===================== */
+/* Bungee is kept here too (SIL Open Font License, fonts/BUNGEE-OFL.txt) so printed menus never fall back to a plain font. */
+@font-face { font-family: 'Bungee Menu'; src: url('../fonts/bungee.woff2') format('woff2'); font-weight: 400; font-display: block; }
+/* Brand colors from the express menus: navy boxes, pink names, orange badges, lime band. */
+.mm-page {
+  --mm-navy: #253F8F; --mm-pink: #D7426F; --mm-orange: #F7962B; --mm-lime: #E6ECB6; --mm-green: #86A52A; --mm-cream: #FCF8EE; --mm-red: #C8452B;
+  width: 8.5in; height: 11in; padding: .3in; background: #fff; color: var(--mm-navy); overflow: hidden; position: relative;
+  font-family: 'DM Sans', 'Segoe UI', sans-serif; font-size: 13pt; line-height: 1.25;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.mm-page.mm-half { width: 5.5in; height: 8.5in; padding: .2in; font-size: 9.5pt; }
+.mm-frame { min-height: 100%; background: var(--mm-lime); border-radius: 1em; padding: 1em 1.1em 1.2em; display: flex; flex-direction: column; gap: 1em;
+  background-image: repeating-linear-gradient(-28deg, transparent 0 3.2em, rgba(255, 255, 255, .28) 3.2em 4.4em); }
+.mm-addr { text-align: center; font-family: 'Bungee Menu', 'Bungee', sans-serif; font-size: .62em; letter-spacing: .12em; text-transform: uppercase; color: var(--mm-navy); }
+.mm-head { background: var(--mm-cream); border: .16em solid var(--mm-navy); border-radius: 1em; box-shadow: 0 .38em 0 var(--mm-pink); padding: .55em 1em .6em; text-align: center; }
+.mm-logo { font-family: 'Bungee Menu', 'Bungee', sans-serif; font-size: 3.6em; line-height: 1.05; color: var(--mm-green); -webkit-text-stroke: .025em #2c3a10; letter-spacing: .02em; }
+.mm-tag { font-family: 'Bungee Menu', 'Bungee', sans-serif; font-size: .9em; letter-spacing: .14em; text-transform: uppercase; color: var(--mm-pink); margin-top: .15em; }
+.mm-event { align-self: center; font-family: 'Bungee Menu', 'Bungee', sans-serif; font-size: 1.15em; letter-spacing: .06em; text-transform: uppercase; color: #fff; background: var(--mm-pink);
+  border: .14em solid var(--mm-navy); border-radius: 999px; padding: .2em 1.1em; box-shadow: 0 .22em 0 var(--mm-navy); text-align: center; }
+.mm-sec { background: var(--mm-cream); border: .14em solid var(--mm-navy); border-radius: 1em; padding: .8em 1.1em .7em; box-shadow: 0 .22em 0 var(--mm-navy); }
+.mm-sec-title { font-family: 'Bungee Menu', 'Bungee', sans-serif; font-size: 1.8em; line-height: 1.1; color: var(--mm-navy); text-transform: uppercase; }
+.mm-sub { font-weight: 700; font-size: .78em; margin-top: .2em; }
+.mm-sized-head { display: grid; align-items: end; gap: 0 .2em; margin-top: .45em; padding-bottom: .3em; border-bottom: .12em dashed var(--mm-navy); }
+.mm-note { font-weight: 700; font-size: .62em; }
+.mm-size { font-family: 'Bungee Menu', 'Bungee', sans-serif; font-size: .78em; text-align: center; text-transform: uppercase; }
+.mm-size.first, .mm-p.first { color: var(--mm-red); }
+.mm-row { padding: .55em 0; border-bottom: .1em dotted rgba(37, 63, 143, .6); }
+.mm-row:last-child { border-bottom: 0; padding-bottom: .1em; }
+.mm-sized { display: grid; align-items: center; gap: 0 .2em; }
+.mm-list { display: flex; align-items: center; gap: .8em; }
+.mm-item { flex: 1; min-width: 0; }
+.mm-name { font-family: 'Bungee Menu', 'Bungee', sans-serif; font-size: 1.22em; line-height: 1.12; color: var(--mm-pink); text-transform: uppercase; }
+.mm-desc { font-weight: 600; font-size: .78em; margin-top: .15em; }
+.mm-p { font-family: 'Bungee Menu', 'Bungee', sans-serif; font-size: .9em; text-align: center; }
+.mm-badge { flex-shrink: 0; width: 3.3em; height: 3.3em; border-radius: 50%; display: grid; place-items: center; background: var(--mm-orange);
+  border: .12em dashed var(--mm-navy); outline: .18em solid var(--mm-orange); font-family: 'Bungee Menu', 'Bungee', sans-serif; font-size: .95em; color: var(--mm-navy); }
+.mm-feat { display: inline-block; vertical-align: .25em; margin-left: .5em; font-family: 'DM Sans', sans-serif; font-weight: 700; font-size: .5em; letter-spacing: .06em;
+  text-transform: uppercase; color: #fff; background: var(--mm-navy); border-radius: 999px; padding: .2em .7em; }
+.mm-foot { margin-top: auto; text-align: center; font-family: 'Bungee Menu', 'Bungee', sans-serif; font-size: .78em; letter-spacing: .06em; text-transform: uppercase; color: var(--mm-navy); }
+
+/* Printing: only the menu sheet(s) print. */
+#mm-print { display: none; }
+@media print {
+  html.mm-printing body > *:not(#mm-print) { display: none !important; }
+  html.mm-printing, html.mm-printing body { background: #fff !important; margin: 0; padding: 0; }
+  html.mm-printing #mm-print { display: block; }
+  #mm-print .mm-sheet { display: flex; page-break-after: always; break-after: page; }
+  #mm-print .mm-sheet:last-child { page-break-after: auto; break-after: auto; }
+  #mm-print .mm-sheet.half { width: 11in; height: 8.5in; }
+  #mm-print .mm-sheet.half .mm-page + .mm-page { border-left: 1px dashed #bbb; }
+}
+
+/* ===================== Menu Maker: the tool ===================== */
+.mm-tool { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+.mm-edit { display: grid; gap: 14px; }
+.mm-preview { position: sticky; top: 12px; display: grid; gap: 10px; }
+.mm-preview-box { background: #3a4a4e; border-radius: var(--r); padding: 14px; overflow: hidden; }
+.mm-scale { transform-origin: top left; }
+.mm-scale .mm-page { box-shadow: 0 10px 30px rgba(0, 0, 0, .45); }
+.mm-shrunk { font-size: 13.5px; color: var(--gold); }
+.mm-sec-card { display: grid; gap: 10px; }
+.mm-sec-card-head { display: flex; align-items: center; gap: 8px; }
+.mm-sec-card-head { flex-wrap: wrap; }
+.mm-sec-card-head .input { flex: 1 1 220px; font-family: var(--f-label); font-weight: 700; font-size: 18px; }
+.mm-type { font-size: 12px; }
+.mm-item-row { display: grid; gap: 8px; padding: 10px; border: 1.5px solid var(--line); border-radius: var(--r-sm); }
+.mm-item-top { display: flex; gap: 8px; align-items: center; }
+.mm-item-top .input:first-child { flex: 1; font-weight: 700; }
+.mm-prices { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.mm-prices label { display: grid; gap: 2px; font-size: 12px; color: var(--muted); }
+.mm-prices .input { width: 82px; min-height: 40px; padding: 0 10px; }
+.mm-price { width: 96px; min-height: 44px; }
+.mm-feat-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; color: var(--cream-dim); cursor: pointer; }
+.mm-feat-toggle input { width: 20px; height: 20px; accent-color: var(--gold); }
+.mm-add-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.mm-bar { position: sticky; bottom: calc(12px + var(--safe-b)); z-index: 15; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; padding: 12px;
+  border-radius: 20px; background: rgba(12, 42, 48, .96); border: 1.5px solid var(--line); box-shadow: 0 12px 30px rgba(0, 0, 0, .5); }
+.mm-bar .spacer { flex: 1; }
+.mm-list-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+.mm-card { display: grid; gap: 8px; text-align: left; width: 100%; }
+.mm-thumb { position: relative; height: 200px; overflow: hidden; border-radius: var(--r-sm); background: #3a4a4e; pointer-events: none; }
+.mm-thumb-in { position: absolute; left: 50%; top: 8px; transform-origin: top center; }
+.mm-card-title { font-family: var(--f-label); font-weight: 700; font-size: 17px; }
+.mm-mobile-tabs { display: none; }
+@media (max-width: 900px) {
+  .mm-tool { grid-template-columns: 1fr; }
+  .mm-preview { position: static; }
+  .mm-mobile-tabs { display: flex; }
+  .mm-tool[data-pane="edit"] .mm-preview, .mm-tool[data-pane="preview"] .mm-edit { display: none; }
+}

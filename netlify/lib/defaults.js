@@ -1,7 +1,7 @@
 // Starting data written when the owner first sets up a location.
 // Access levels: 0 = hidden, 1 = use, 2 = manage.
 // Tool ids must match the `id` in each hub/tools/<id>/manifest.js.
-export const TOOL_IDS = ["tv", "checklists", "quests", "knowledge", "suggestions", "admin"];
+export const TOOL_IDS = ["tv", "checklists", "quests", "menus", "knowledge", "suggestions", "admin"];
 
 export const DEFAULT_ROLES = {
   owner: {
@@ -14,13 +14,13 @@ export const DEFAULT_ROLES = {
     name: "Manager",
     rank: 50,
     system: false,
-    perms: { tv: 2, checklists: 2, quests: 2, knowledge: 2, suggestions: 2, admin: 0 },
+    perms: { tv: 2, checklists: 2, quests: 2, menus: 2, knowledge: 2, suggestions: 2, admin: 0 },
   },
   kavatender: {
     name: "Kavatender",
     rank: 10,
     system: false,
-    perms: { tv: 1, checklists: 1, quests: 1, knowledge: 1, suggestions: 1, admin: 0 },
+    perms: { tv: 1, checklists: 1, quests: 1, menus: 1, knowledge: 1, suggestions: 1, admin: 0 },
   },
 };
 

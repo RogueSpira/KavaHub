@@ -262,3 +262,18 @@ export const giveStars = (session, { uid, name, stars, reason }) => F.addDoc(col
   kind: "manual", questId: "", questTitle: reason || (stars > 0 ? "Bonus star" : "Star taken back"), uid, name, note: "", photo: "",
   at: F.serverTimestamp(), status: "approved", stars, reviewedBy: session.me.name, reviewedAt: F.serverTimestamp(), reviewNote: "",
 });
+
+/* ---------- Menu Maker ---------- */
+const menuCol = () => col("tools-data/menus/items");
+export function watchMenus(cb) {
+  return F.onSnapshot(F.query(menuCol(), F.orderBy("updatedAt", "desc"), F.limit(200)),
+    (q) => cb(q.docs.map((d) => { const x = d.data(EST); return { id: d.id, ...x, updatedAt: tsToDate(x.updatedAt), createdAt: tsToDate(x.createdAt) }; })),
+    (e) => { console.warn("[hub] menus", e); cb(null, e); });
+}
+export async function saveMenu(session, id, data) {
+  const stamp = { updatedAt: F.serverTimestamp(), updatedBy: session.me.name };
+  if (id) { await F.updateDoc(F.doc(menuCol(), id), { ...data, ...stamp }); return id; }
+  const ref = await F.addDoc(menuCol(), { ...data, ...stamp, createdAt: F.serverTimestamp(), createdBy: session.me.name, createdUid: session.uid });
+  return ref.id;
+}
+export const deleteMenu = (id) => F.deleteDoc(F.doc(menuCol(), id));

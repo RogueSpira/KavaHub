@@ -14,13 +14,13 @@ const id = (p) => `${p}-${(seq++).toString(36)}`;
 
 const ROLES = {
   owner: { id: "owner", name: "Owner", rank: 100, system: true, perms: {} },
-  manager: { id: "manager", name: "Manager", rank: 50, system: false, perms: { tv: 2, checklists: 2, knowledge: 2, suggestions: 2, quests: 2, admin: 0 } },
-  kavatender: { id: "kavatender", name: "Kavatender", rank: 10, system: false, perms: { tv: 1, checklists: 1, knowledge: 1, suggestions: 1, quests: 1, admin: 0 } },
+  manager: { id: "manager", name: "Manager", rank: 50, system: false, perms: { tv: 2, checklists: 2, knowledge: 2, suggestions: 2, quests: 2, menus: 2, admin: 0 } },
+  kavatender: { id: "kavatender", name: "Kavatender", rank: 10, system: false, perms: { tv: 1, checklists: 1, knowledge: 1, suggestions: 1, quests: 1, menus: 1, admin: 0 } },
 };
 const store = {
   location: fresh ? null : { id: LOCATION_ID, name: "Kava & Co. Mandarin", setupDone: true, settings: { autoLockSeconds: 120 } },
   roles: fresh ? {} : structuredClone(ROLES),
-  tools: fresh ? {} : Object.fromEntries(["tv", "checklists", "quests", "knowledge", "suggestions", "admin"].map((t, i) => [t, { enabled: true, order: i }])),
+  tools: fresh ? {} : Object.fromEntries(["tv", "checklists", "quests", "menus", "knowledge", "suggestions", "admin"].map((t, i) => [t, { enabled: true, order: i }])),
   users: {},
   pins: {}, // pin -> uid  (demo only; the real backend never stores PINs)
   activity: [],
@@ -81,7 +81,7 @@ export async function setupOwner({ setupCode, name, pin }) {
   checkPin(pin);
   store.location = { id: LOCATION_ID, name: "Kava & Co. Mandarin", setupDone: true, settings: { autoLockSeconds: 120 } };
   store.roles = structuredClone(ROLES);
-  store.tools = Object.fromEntries(["tv", "checklists", "quests", "knowledge", "suggestions", "admin"].map((t, i) => [t, { enabled: true, order: i }]));
+  store.tools = Object.fromEntries(["tv", "checklists", "quests", "menus", "knowledge", "suggestions", "admin"].map((t, i) => [t, { enabled: true, order: i }]));
   currentUid = addUser(cleanName(name), "owner", pin);
   addActivity("admin", "Set up location", `Owner: ${name}`);
 }
@@ -400,4 +400,28 @@ export async function giveStars(session, { uid, name, stars, reason }) {
   qsubs.unshift({ id: id("qs"), kind: "manual", questId: "", questTitle: reason || (stars > 0 ? "Bonus star" : "Star taken back"), uid, name, note: "", photo: "",
     at: now(), status: "approved", stars, reviewedBy: session.me.name, reviewedAt: now(), reviewNote: "" });
   changed();
+}
+
+/* ---------- Menu Maker ---------- */
+const menusStore = [];
+if (!fresh) {
+  const { TEMPLATES } = await import("../../tools/menus/index.js");
+  const m = TEMPLATES.express.make();
+  menusStore.push({ id: id("m"), ...m, title: "Express menu (sample)", event: "Trivia Night", updatedAt: new Date(Date.now() - 2 * 864e5), updatedBy: "Rogue", createdAt: new Date(Date.now() - 5 * 864e5), createdBy: "Rogue", createdUid: Object.values(store.users).find((u) => u.name === "Rogue")?.uid });
+}
+const menuLevel = () => { const u = me(); return !u ? 0 : u.roleId === "owner" ? 2 : (u.overrides.menus ?? store.roles[u.roleId]?.perms.menus ?? 0); };
+export function watchMenus(cb) { return watch(() => cb(structuredClone(menusStore).sort((a, b) => b.updatedAt - a.updatedAt))); }
+export async function saveMenu(session, mid, data) {
+  await wait(150);
+  if (menuLevel() < 1) throw new Error("Missing or insufficient permissions.");
+  if (mid) { Object.assign(menusStore.find((x) => x.id === mid), structuredClone(data), { updatedAt: now(), updatedBy: session.me.name }); changed(); return mid; }
+  const x = { id: id("m"), ...structuredClone(data), updatedAt: now(), updatedBy: session.me.name, createdAt: now(), createdBy: session.me.name, createdUid: session.uid };
+  menusStore.unshift(x); changed(); return x.id;
+}
+export async function deleteMenu(mid) {
+  await wait(100);
+  const i = menusStore.findIndex((x) => x.id === mid);
+  if (i < 0) return;
+  if (!(menuLevel() >= 2 || menusStore[i].createdUid === currentUid)) throw new Error("Missing or insufficient permissions.");
+  menusStore.splice(i, 1); changed();
 }
