@@ -19,26 +19,18 @@ const loadImg = (src) => new Promise((res) => {
   const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src;
 });
 
-// Best video format this device can record. Instagram needs MP4.
-function pickFormat() {
-  const MR = window.MediaRecorder;
-  if (!MR) return null;
-  const ok = (t) => { try { return MR.isTypeSupported(t); } catch { return false; } };
-  // H.264 MP4 is what Instagram wants. Safari's plain "video/mp4" is H.264; Chrome's may not be.
-  for (const type of ["video/mp4;codecs=avc1.640028", "video/mp4;codecs=avc1.4d002a", "video/mp4;codecs=avc1.42E01E", "video/mp4;codecs=avc1"]) if (ok(type)) return { type, ext: "mp4", h264: true };
-  if (ok("video/mp4")) return { type: "video/mp4", ext: "mp4", h264: !ok("video/webm") };
-  for (const type of ["video/webm;codecs=vp9", "video/webm"]) if (ok(type)) return { type, ext: "webm", h264: false };
-  return null;
-}
-
-// The main way to make the video: draw every frame and encode it as H.264 MP4 (what Instagram
-// wants) with the browser's built-in video encoder. Works in Chrome, Edge, Safari and newer
-// Firefox, on computers and phones, and runs faster than real time. Returns null if this
-// browser can't encode H.264, so the caller can fall back to recording.
+// Making the video. Instagram needs H.264 MP4, so every path below produces exactly that.
+//  1. The browser's built-in encoder (WebCodecs): Chrome, Edge, Safari, most phones. Fast.
+//  2. If that's missing or fails (e.g. Firefox), a bundled H.264 encoder that runs in the page
+//     (WebAssembly). Works in every modern browser; a bit slower.
+// Both draw each frame at full size off-screen, so the video never depends on playback speed.
 const FPS = 30;
-async function h264Codec() {
+const frameCount = (seconds) => Math.round((seconds + 0.3) * FPS);
+const tick = () => new Promise((r) => setTimeout(r, 0));
+
+async function h264Config() {
   if (!window.VideoEncoder || !window.VideoFrame) return null;
-  for (const codec of ["avc1.640034", "avc1.640033", "avc1.640032", "avc1.640028", "avc1.4d0034", "avc1.4d0028", "avc1.42003e", "avc1.420034"]) {
+  for (const codec of ["avc1.640034", "avc1.640033", "avc1.640032", "avc1.640028", "avc1.4d0034", "avc1.4d0028", "avc1.42003e", "avc1.420034", "avc1.42002a"]) {
     for (const hardwareAcceleration of ["no-preference", "prefer-software"]) {
       const config = { codec, width: W, height: H, bitrate: 10_000_000, framerate: FPS, hardwareAcceleration, avc: { format: "avc" } };
       try { if ((await VideoEncoder.isConfigSupported(config)).supported) return config; } catch {}
@@ -46,32 +38,86 @@ async function h264Codec() {
   }
   return null;
 }
-async function encodeMp4(reel, assets, onProgress) {
-  const config = await h264Codec();
+async function encodeWebCodecs(reel, assets, onProgress) {
+  const config = await h264Config();
   if (!config) return null;
   const c = document.createElement("canvas"); c.width = W; c.height = H;
   const g = c.getContext("2d");
   const target = new ArrayBufferTarget();
   const muxer = new Muxer({ target, video: { codec: "avc", width: W, height: H, frameRate: FPS }, fastStart: "in-memory" });
-  let failed = null;
-  const enc = new VideoEncoder({ output: (chunk, meta) => muxer.addVideoChunk(chunk, meta), error: (e) => { failed = e; } });
-  enc.configure(config);
-  const D = reel.seconds, frames = Math.round((D + 0.3) * FPS), us = 1e6 / FPS;
-  for (let i = 0; i < frames; i++) {
-    if (failed) break;
+  let failed = null, chunks = 0;
+  const enc = new VideoEncoder({
+    output: (chunk, meta) => {
+      try {
+        if (!chunks && !meta?.decoderConfig?.description) throw new Error("encoder gave no H.264 header");
+        muxer.addVideoChunk(chunk, meta); chunks++;
+      } catch (e) { failed = e; }
+    },
+    error: (e) => { failed = e; },
+  });
+  try { enc.configure(config); } catch (e) { return null; }
+  const D = reel.seconds, frames = frameCount(D), us = 1e6 / FPS;
+  for (let i = 0; i < frames && !failed; i++) {
     drawFrame(g, Math.min(i / FPS, D), reel, assets);
     const frame = new VideoFrame(c, { timestamp: Math.round(i * us), duration: Math.round(us) });
-    enc.encode(frame, { keyFrame: i % (FPS * 2) === 0 });
+    try { enc.encode(frame, { keyFrame: i % (FPS * 2) === 0 }); } catch (e) { failed = e; }
     frame.close();
-    // Let the encoder catch up and keep the page responsive.
     while (enc.encodeQueueSize > 6 && !failed) await new Promise((r) => setTimeout(r, 5));
-    if (i % 6 === 0) { onProgress(i / frames); await new Promise((r) => setTimeout(r, 0)); }
+    if (i % 6 === 0) { onProgress(i / frames); await tick(); }
   }
   if (!failed) await enc.flush().catch((e) => { failed = e; });
   try { enc.close(); } catch {}
-  if (failed) { console.warn("H.264 encode failed", failed); return null; }
+  if (failed || chunks < frames * 0.9) { console.warn("Built-in H.264 encoder didn't work, using the bundled one", failed); return null; }
   muxer.finalize();
   return new Blob([target.buffer], { type: "video/mp4" });
+}
+
+let hmeLoading = null;
+function loadHme() {
+  if (window.HME) return Promise.resolve(window.HME);
+  hmeLoading ||= new Promise((res, rej) => {
+    const s = document.createElement("script");
+    s.src = "/vendor/h264-mp4-encoder.web.js";
+    s.onload = () => (window.HME ? res(window.HME) : rej(new Error("Video encoder didn't load")));
+    s.onerror = () => { hmeLoading = null; rej(new Error("Couldn't load the video encoder. Check the connection and try again.")); };
+    document.head.append(s);
+  });
+  return hmeLoading;
+}
+async function encodeWasm(reel, assets, onProgress) {
+  const HME = await loadHme();
+  const enc = await HME.createH264MP4Encoder();
+  enc.width = W; enc.height = H; enc.frameRate = FPS;
+  enc.speed = 10; enc.quantizationParameter = 24; enc.groupOfPictures = FPS * 2;
+  enc.initialize();
+  try {
+    const c = document.createElement("canvas"); c.width = W; c.height = H;
+    const g = c.getContext("2d", { willReadFrequently: true });
+    const D = reel.seconds, frames = frameCount(D);
+    for (let i = 0; i < frames; i++) {
+      drawFrame(g, Math.min(i / FPS, D), reel, assets);
+      enc.addFrameRgba(g.getImageData(0, 0, W, H).data);
+      onProgress(i / frames);
+      await tick();
+    }
+    enc.finalize();
+    const bytes = enc.FS.readFile(enc.outputFilename);
+    return new Blob([bytes], { type: "video/mp4" });
+  } finally {
+    try { enc.FS.unlink(enc.outputFilename); } catch {}
+    try { enc.delete(); } catch {}
+  }
+}
+
+// Phone photos can be 12+ megapixels; drawing that 30 times a second is slow. Keep a copy that's
+// just big enough for a 1080-wide video.
+function shrink(img, max = 1500) {
+  if (!img) return null;
+  const w = img.naturalWidth, h = img.naturalHeight, k = Math.min(1, max / Math.max(w, h));
+  if (k >= 1) return img;
+  const c = document.createElement("canvas"); c.width = Math.round(w * k); c.height = Math.round(h * k);
+  const g = c.getContext("2d"); g.imageSmoothingQuality = "high"; g.drawImage(img, 0, 0, c.width, c.height);
+  return c;
 }
 
 export function mount(el, ctx) {
@@ -96,7 +142,9 @@ export function mount(el, ctx) {
 
   /* ---------- layout ---------- */
   const form = h("div", { class: "mm-edit" });
-  const canvas = h("canvas", { width: W, height: H, class: "rm-canvas" });
+  // The preview draws at half size (4× fewer pixels) so typing stays smooth; the video is full size.
+  const PREVIEW = 0.5;
+  const canvas = h("canvas", { width: W * PREVIEW, height: H * PREVIEW, class: "rm-canvas" });
   const g = canvas.getContext("2d");
   const playBtn = h("button", { class: "btn small", type: "button", onclick: () => { start = performance.now(); playing = true; } }, "↺ Play again");
   const makeBtn = h("button", { class: "btn primary", type: "button", onclick: makeVideo }, "🎬 Make video");
@@ -164,7 +212,7 @@ export function mount(el, ctx) {
   function setPhoto(src, from = "") {
     if (photoUrl.startsWith("blob:") && photoSource === "upload") URL.revokeObjectURL(photoUrl);
     photoUrl = src || ""; photoSource = from; assets.photo = null;
-    if (src) loadImg(src).then((img) => { if (photoUrl === src) assets.photo = img; });
+    if (src) loadImg(src).then((img) => { if (photoUrl === src) assets.photo = shrink(img); });
   }
 
   /* ---------- pull from TV Screens ---------- */
@@ -213,64 +261,46 @@ export function mount(el, ctx) {
   }
 
   /* ---------- preview loop ---------- */
-  let start = performance.now(), playing = true, raf = 0, recording = false;
+  // ~30 fps is plenty for a preview. Skips drawing while the preview is hidden (phone Edit tab,
+  // another browser tab) or while the video is being made.
+  let start = performance.now(), playing = true, raf = 0, busy = false, last = 0, quietUntil = 0;
+  // While someone is typing, hold the preview still so every keystroke gets the whole CPU;
+  // it catches up a moment after they pause.
+  form.addEventListener("input", () => { quietUntil = performance.now() + 300; });
   const restart = () => { start = performance.now(); playing = true; };
   function loop(now) {
-    if (!recording) {
-      let t = (now - start) / 1000;
-      if (t > reel.seconds + 0.8) { start = now; t = 0; } // loop with a short pause on the end card
-      drawFrame(g, Math.min(t, reel.seconds), reel, assets);
-    }
     raf = requestAnimationFrame(loop);
+    if (busy || document.hidden || now - last < 32 || now < quietUntil || !canvas.offsetParent) return;
+    last = now;
+    let t = (now - start) / 1000;
+    if (t > reel.seconds + 0.8) { start = now; t = 0; } // loop with a short pause on the end card
+    g.setTransform(PREVIEW, 0, 0, PREVIEW, 0, 0);
+    drawFrame(g, Math.min(t, reel.seconds), reel, assets, PREVIEW);
   }
 
   /* ---------- export ---------- */
   async function makeVideo() {
+    if (busy) return;
     if (assets.photo == null && photoUrl) await new Promise((r) => setTimeout(r, 300));
     await document.fonts?.ready;
-    makeBtn.disabled = true; playBtn.disabled = true; clear(result);
-    let blob = null, fmt = { ext: "mp4", h264: true };
+    busy = true; makeBtn.disabled = true; playBtn.disabled = true; clear(result);
+    const progress = (p) => { status.textContent = `Making the video… ${Math.round(p * 100)}% (keep this screen open)`; };
+    let blob = null;
     try {
-      blob = await encodeMp4(reel, assets, (p) => { status.textContent = `Making the video… ${Math.round(p * 100)}%`; });
-    } catch (e) { console.warn(e); blob = null; }
-    if (!blob) {
-      // Older browsers: record the preview in real time instead.
-      fmt = pickFormat();
-      if (!fmt || !canvas.captureStream) { status.textContent = "This browser can't make video. Try Chrome or Safari."; makeBtn.disabled = false; playBtn.disabled = false; return; }
-      blob = await recordRealtime(fmt);
+      blob = await encodeWebCodecs(reel, assets, progress).catch((e) => { console.warn(e); return null; });
+      if (!blob) blob = await encodeWasm(reel, assets, progress);
+    } catch (e) {
+      console.error(e);
+      status.textContent = `Couldn't make the video: ${e.message || e}`;
     }
-    makeBtn.disabled = false; playBtn.disabled = false; restart();
-    showResult(blob, fmt);
+    busy = false; makeBtn.disabled = false; playBtn.disabled = false; restart();
+    if (blob) showResult(blob);
   }
-  async function recordRealtime(fmt) {
-    recording = true;
-    const stream = canvas.captureStream(30);
-    const chunks = [];
-    const rec = new MediaRecorder(stream, { mimeType: fmt.type, videoBitsPerSecond: 8_000_000 });
-    rec.ondataavailable = (e) => { if (e.data?.size) chunks.push(e.data); };
-    const done = new Promise((res) => { rec.onstop = res; });
-    const D = reel.seconds;
-    rec.start(250);
-    const t0 = performance.now();
-    await new Promise((res) => {
-      const step = (now) => {
-        const t = (now - t0) / 1000;
-        drawFrame(g, Math.min(t, D), reel, assets);
-        status.textContent = `Recording… ${Math.min(100, Math.round((t / D) * 100))}% (it plays through once in real time)`;
-        if (t < D + 0.25) requestAnimationFrame(step); else res();
-      };
-      requestAnimationFrame(step);
-    });
-    rec.stop(); await done;
-    stream.getTracks().forEach((tr) => tr.stop());
-    recording = false;
-    return new Blob(chunks, { type: fmt.type.split(";")[0] });
-  }
-  function showResult(blob, fmt) {
-    const name = `kava-${reel.template}-${(reel.data.title || "reel").toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30)}.${fmt.ext}`;
+  function showResult(blob) {
+    const name = `kava-${reel.template}-${(reel.data.title || "reel").toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30)}.mp4`;
     const file = new File([blob], name, { type: blob.type });
     const url = URL.createObjectURL(blob);
-    status.textContent = `Done · ${(blob.size / 1e6).toFixed(1)} MB · ${fmt.ext.toUpperCase()}`;
+    status.textContent = `Done · ${(blob.size / 1e6).toFixed(1)} MB · MP4 (H.264, ready for Instagram)`;
     const canShare = navigator.canShare?.({ files: [file] });
     add(result,
       h("video", { class: "rm-video", src: url, controls: true, playsinline: true, muted: true, loop: true }),
@@ -278,10 +308,7 @@ export function mount(el, ctx) {
         canShare ? h("button", { class: "btn primary", type: "button", onclick: async () => {
           try { await navigator.share({ files: [file], title: reel.data.title || "Kava & Co." }); } catch (e) { if (e.name !== "AbortError") ctx.toast(e.message, "err"); }
         } }, "📤 Share (Instagram, Photos…)") : null,
-        h("a", { class: "btn", href: url, download: name }, "⬇ Download")),
-      !fmt.h264 ? h("p", { class: "modal-err" }, fmt.ext === "mp4"
-        ? "This browser made the video in a format Instagram may not accept. Update the browser, or make it in Chrome or Safari."
-        : "This browser could only save a WEBM video, which Instagram won't take. Update the browser, or make it in Chrome or Safari to get an MP4.") : null);
+        h("a", { class: "btn", href: url, download: name }, "⬇ Download")));
     ctx.log("Made a reel", `${TEMPLATES[reel.template].name}: ${reel.data.title || ""}`);
   }
 

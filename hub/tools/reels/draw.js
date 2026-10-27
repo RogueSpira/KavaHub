@@ -9,6 +9,9 @@ const B = { ink: "#071417", panel: "#123035", navy: "#0C2A30", cream: "#FFF3E0",
 
 // Content lives between TOP and BOTTOM. Instagram covers the very bottom with its caption and
 // buttons, so the address line sits at FOOT, above that.
+// Canvas shadows ignore scaling, so a preview drawn at half size passes scale 0.5 and every
+// blur/offset is scaled to match (which also makes the preview much cheaper to draw).
+let PX = 1;
 const TOP = 500, BOTTOM = 1540, FOOT = 1630, GAP = 34;
 
 /* ---------- looks (from the brand kit) ---------- */
@@ -72,7 +75,19 @@ function roundRect(g, x, y, w, h, r) {
   g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
 }
 // Wraps text to fit maxW in at most maxLines, shrinking the font if needed. Returns lines + size.
+// Results are cached: the same text is laid out 30 times a second, and measuring is the slow part.
+const fitCache = new Map();
 function fit(g, str, font, size, maxW, maxLines, min = Math.round(size * 0.5)) {
+  const key = `${str}\u0001${font}\u0001${size}\u0001${maxW}\u0001${maxLines}\u0001${min}`;
+  const hit = fitCache.get(key);
+  if (hit) return hit;
+  const out = fitUncached(g, str, font, size, maxW, maxLines, min);
+  if (fitCache.size > 400) fitCache.clear();
+  // Don't keep results measured before the brand font finished loading.
+  if (document.fonts?.check?.(`20px ${DISPLAY}`) !== false) fitCache.set(key, out);
+  return out;
+}
+function fitUncached(g, str, font, size, maxW, maxLines, min) {
   let s = size, lines = [];
   const words = String(str || "").split(/\s+/).filter(Boolean);
   for (; s >= min; s -= 2) {
@@ -102,7 +117,7 @@ function textBlock(g, str, { font, size, maxW = W - 180, maxLines = 2, lineH = 1
         const yy = y + f.size * 0.88 + i * lh;
         if (shadow) { g.fillStyle = shadow; g.fillText(l, x + f.size * 0.06, yy + f.size * 0.06); }
         if (stroke) { g.lineWidth = Math.max(6, f.size * 0.09); g.strokeStyle = stroke; g.lineJoin = "round"; g.strokeText(l, x, yy); }
-        g.save(); if (glow) { g.shadowColor = glow; g.shadowBlur = f.size * 0.45; }
+        g.save(); if (glow) { g.shadowColor = glow; g.shadowBlur = (f.size * 0.45) * PX; }
         g.fillStyle = color; g.fillText(l, x, yy); g.restore();
       });
     },
@@ -131,7 +146,7 @@ function cover(g, img, x, y, w, h, zoom = 1) {
 }
 function photo(g, L, img, x, y, w, h, t, circle) {
   g.save();
-  g.shadowColor = L.ringGlow; g.shadowBlur = 50;
+  g.shadowColor = L.ringGlow; g.shadowBlur = (50) * PX;
   if (circle) { g.beginPath(); g.arc(x + w / 2, y + h / 2, w / 2 + 12, 0, Math.PI * 2); } else roundRect(g, x - 12, y - 12, w + 24, h + 24, 56);
   g.fillStyle = L.ring; g.fill(); g.shadowBlur = 0;
   if (circle) { g.beginPath(); g.arc(x + w / 2, y + h / 2, w / 2, 0, Math.PI * 2); } else roundRect(g, x, y, w, h, 46);
@@ -142,7 +157,7 @@ function photo(g, L, img, x, y, w, h, t, circle) {
 }
 function badge(g, L, label, cx, cy, r) {
   g.save(); g.translate(cx, cy); g.rotate(-0.12);
-  g.shadowColor = "rgba(0,0,0,.25)"; g.shadowBlur = 24; g.shadowOffsetY = 8;
+  g.shadowColor = "rgba(0,0,0,.25)"; g.shadowBlur = (24) * PX; g.shadowOffsetY = (8) * PX;
   g.beginPath(); g.arc(0, 0, r, 0, Math.PI * 2); g.fillStyle = L.badge || B.orange; g.fill();
   g.shadowColor = "transparent";
   g.setLineDash([14, 10]); g.lineWidth = 6; g.strokeStyle = B.ink; g.beginPath(); g.arc(0, 0, r - 15, 0, Math.PI * 2); g.stroke(); g.setLineDash([]);
@@ -213,7 +228,7 @@ function endCard(g, L, t, a, D, line) {
 // Draws the photo inside a shape (with a colored rim) inside the box x,y,w,h.
 function shaped(g, L, t, img, pathFn, box) {
   g.save();
-  pathFn(); g.shadowColor = L.ringGlow; g.shadowBlur = 50;
+  pathFn(); g.shadowColor = L.ringGlow; g.shadowBlur = (50) * PX;
   g.lineWidth = 26; g.lineJoin = "round"; g.strokeStyle = L.ring; g.stroke(); g.shadowBlur = 0;
   pathFn(); g.fillStyle = L.photoBg; g.fill(); g.clip();
   const [x, y, w, h] = box;
@@ -238,7 +253,7 @@ function ribbon(g, L, t, name, cy) {
   if (!label) return;
   const band = L === LOOKS.sunset ? B.ink : B.orange;
   g.save(); g.translate(W / 2, cy); g.rotate(-0.07 + Math.sin(t * 1.1) * 0.006);
-  g.shadowColor = "rgba(0,0,0,.28)"; g.shadowBlur = 30; g.shadowOffsetY = 10;
+  g.shadowColor = "rgba(0,0,0,.28)"; g.shadowBlur = (30) * PX; g.shadowOffsetY = (10) * PX;
   const bh = 170;
   g.beginPath(); g.moveTo(-W * 0.62, -bh / 2); g.lineTo(W * 0.62, -bh / 2 - 6); g.lineTo(W * 0.6, bh / 2); g.lineTo(-W * 0.6, bh / 2 + 6); g.closePath();
   g.fillStyle = band; g.fill(); g.shadowColor = "transparent";
@@ -344,30 +359,29 @@ export const TEMPLATES = {
   },
   staff: {
     name: "Meet your kavatender", icon: "🧑‍🍳",
-    fields: [["kicker", "Small line on top", "Meet your kavatender"], ["title", "Name", "Wheatyn"], ["desc", "Fun fact / favorite drink", "Go-to drink: The Wheatyn Special. Ask about the coconut cream."], ["when", "Shifts (optional)", "Tuesdays & Fridays"]],
+    fields: [["kicker", "Small line on top", "Meet your kavatender"], ["title", "Name", "Your Name"], ["desc", "Fun fact / favorite drink", "Ask me about my favorite drink!"]],
     photo: "Today's photo (snap a fresh one!)", end: "Come say hi",
     // The photo is the star: a tilted photo card (with two colored cards fanned behind it) and the name on a tilted ribbon across its
-    // bottom edge. Shifts and fun fact sit under it; leave them blank and the photo grows.
+    // bottom edge. The fun fact sits under it; leave it blank and the photo grows.
     draw(g, L, t, d, a) {
-      const pill = pillBlock(g, d.when, { size: 40, bg: L.pill2, fg: L.pill2Text });
       const desc = textBlock(g, d.desc, { font: `500 {s}px ${BODY}`, size: 36, maxLines: 2, lineH: 1.2, color: L.body, maxW: W - 200 });
       const kick = pillBlock(g, d.kicker, { size: 42, bg: L.pill, fg: L.pillText });
-      const under = (pill ? pill.h + 18 : 0) + (desc ? desc.h + 18 : 0);
+      const under = desc ? desc.h + 18 : 0;
       const x = 90, y = 480, w = W - 180, h = 1590 - y - under - 120;
       const ribbonY = y + h - 30;
 
       enter(g, t, 0.6, () => SHAPES.tilt(g, L, t, a.photo, x, y, w, h), { dist: 80 });
       if (kick) enter(g, t, 0.95, () => { g.save(); g.translate(W / 2, y); g.rotate(0.05); g.translate(-W / 2, -y); kick.draw(y - kick.h / 2 - 6); g.restore(); }, { pop: { cx: W / 2, cy: y } });
       enter(g, t, 1.3, () => ribbon(g, L, t, d.title, ribbonY), { pop: { cx: W / 2, cy: ribbonY } });
-      let ty = ribbonY + 120;
-      if (pill) { const yy = ty; enter(g, t, 1.8, () => pill.draw(yy), { pop: { cx: W / 2, cy: yy + pill.h / 2 } }); ty += pill.h + 18; }
-      if (desc) { const yy = ty; enter(g, t, 2.3, () => desc.draw(yy), { dist: 30 }); }
+      const ty = ribbonY + 120;
+      if (desc) { const yy = ty; enter(g, t, 1.9, () => desc.draw(yy), { dist: 30 }); }
     },
   },
 };
 
 // One whole frame.
-export function drawFrame(g, t, reel, assets) {
+export function drawFrame(g, t, reel, assets, scale = 1) {
+  PX = scale;
   const tpl = TEMPLATES[reel.template] || TEMPLATES.drink;
   const L = LOOKS[reel.look] || LOOKS.cream;
   const D = reel.seconds || 10;
