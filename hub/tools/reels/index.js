@@ -4,6 +4,7 @@
 // No music is added: pick a sound inside Instagram after uploading.
 import { h, clear, field, seg } from "../../js/ui.js";
 import { W, H, TEMPLATES, LOOKS, drawFrame, DISPLAY } from "./draw.js";
+import { Muxer, ArrayBufferTarget } from "../../vendor/mp4-muxer.mjs";
 import { withDefaults, occurrences, businessDate, crewFor, keyOf } from "../../js/tv-shared.js";
 
 const add = (el, ...kids) => { el.append(...kids.flat(Infinity).filter((k) => k != null && k !== false)); return el; };
@@ -28,6 +29,49 @@ function pickFormat() {
   if (ok("video/mp4")) return { type: "video/mp4", ext: "mp4", h264: !ok("video/webm") };
   for (const type of ["video/webm;codecs=vp9", "video/webm"]) if (ok(type)) return { type, ext: "webm", h264: false };
   return null;
+}
+
+// The main way to make the video: draw every frame and encode it as H.264 MP4 (what Instagram
+// wants) with the browser's built-in video encoder. Works in Chrome, Edge, Safari and newer
+// Firefox, on computers and phones, and runs faster than real time. Returns null if this
+// browser can't encode H.264, so the caller can fall back to recording.
+const FPS = 30;
+async function h264Codec() {
+  if (!window.VideoEncoder || !window.VideoFrame) return null;
+  for (const codec of ["avc1.640034", "avc1.640033", "avc1.640032", "avc1.640028", "avc1.4d0034", "avc1.4d0028", "avc1.42003e", "avc1.420034"]) {
+    for (const hardwareAcceleration of ["no-preference", "prefer-software"]) {
+      const config = { codec, width: W, height: H, bitrate: 10_000_000, framerate: FPS, hardwareAcceleration, avc: { format: "avc" } };
+      try { if ((await VideoEncoder.isConfigSupported(config)).supported) return config; } catch {}
+    }
+  }
+  return null;
+}
+async function encodeMp4(reel, assets, onProgress) {
+  const config = await h264Codec();
+  if (!config) return null;
+  const c = document.createElement("canvas"); c.width = W; c.height = H;
+  const g = c.getContext("2d");
+  const target = new ArrayBufferTarget();
+  const muxer = new Muxer({ target, video: { codec: "avc", width: W, height: H, frameRate: FPS }, fastStart: "in-memory" });
+  let failed = null;
+  const enc = new VideoEncoder({ output: (chunk, meta) => muxer.addVideoChunk(chunk, meta), error: (e) => { failed = e; } });
+  enc.configure(config);
+  const D = reel.seconds, frames = Math.round((D + 0.3) * FPS), us = 1e6 / FPS;
+  for (let i = 0; i < frames; i++) {
+    if (failed) break;
+    drawFrame(g, Math.min(i / FPS, D), reel, assets);
+    const frame = new VideoFrame(c, { timestamp: Math.round(i * us), duration: Math.round(us) });
+    enc.encode(frame, { keyFrame: i % (FPS * 2) === 0 });
+    frame.close();
+    // Let the encoder catch up and keep the page responsive.
+    while (enc.encodeQueueSize > 6 && !failed) await new Promise((r) => setTimeout(r, 5));
+    if (i % 6 === 0) { onProgress(i / frames); await new Promise((r) => setTimeout(r, 0)); }
+  }
+  if (!failed) await enc.flush().catch((e) => { failed = e; });
+  try { enc.close(); } catch {}
+  if (failed) { console.warn("H.264 encode failed", failed); return null; }
+  muxer.finalize();
+  return new Blob([target.buffer], { type: "video/mp4" });
 }
 
 export function mount(el, ctx) {
@@ -182,10 +226,23 @@ export function mount(el, ctx) {
 
   /* ---------- export ---------- */
   async function makeVideo() {
-    const fmt = pickFormat();
-    if (!fmt || !canvas.captureStream) { status.textContent = "This browser can't record video. Try Safari on the iPad or Chrome on a computer."; return; }
     if (assets.photo == null && photoUrl) await new Promise((r) => setTimeout(r, 300));
+    await document.fonts?.ready;
     makeBtn.disabled = true; playBtn.disabled = true; clear(result);
+    let blob = null, fmt = { ext: "mp4", h264: true };
+    try {
+      blob = await encodeMp4(reel, assets, (p) => { status.textContent = `Making the video… ${Math.round(p * 100)}%`; });
+    } catch (e) { console.warn(e); blob = null; }
+    if (!blob) {
+      // Older browsers: record the preview in real time instead.
+      fmt = pickFormat();
+      if (!fmt || !canvas.captureStream) { status.textContent = "This browser can't make video. Try Chrome or Safari."; makeBtn.disabled = false; playBtn.disabled = false; return; }
+      blob = await recordRealtime(fmt);
+    }
+    makeBtn.disabled = false; playBtn.disabled = false; restart();
+    showResult(blob, fmt);
+  }
+  async function recordRealtime(fmt) {
     recording = true;
     const stream = canvas.captureStream(30);
     const chunks = [];
@@ -206,8 +263,10 @@ export function mount(el, ctx) {
     });
     rec.stop(); await done;
     stream.getTracks().forEach((tr) => tr.stop());
-    recording = false; makeBtn.disabled = false; playBtn.disabled = false; restart();
-    const blob = new Blob(chunks, { type: fmt.type.split(";")[0] });
+    recording = false;
+    return new Blob(chunks, { type: fmt.type.split(";")[0] });
+  }
+  function showResult(blob, fmt) {
     const name = `kava-${reel.template}-${(reel.data.title || "reel").toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30)}.${fmt.ext}`;
     const file = new File([blob], name, { type: blob.type });
     const url = URL.createObjectURL(blob);
@@ -221,8 +280,8 @@ export function mount(el, ctx) {
         } }, "📤 Share (Instagram, Photos…)") : null,
         h("a", { class: "btn", href: url, download: name }, "⬇ Download")),
       !fmt.h264 ? h("p", { class: "modal-err" }, fmt.ext === "mp4"
-        ? "This browser recorded the video in a format Instagram may not accept. If the upload fails, make it on the iPad or an iPhone (Safari)."
-        : "This browser saved a WEBM video, which Instagram won't take. Make it on the iPad or an iPhone (Safari) to get an MP4.") : null);
+        ? "This browser made the video in a format Instagram may not accept. Update the browser, or make it in Chrome or Safari."
+        : "This browser could only save a WEBM video, which Instagram won't take. Update the browser, or make it in Chrome or Safari to get an MP4.") : null);
     ctx.log("Made a reel", `${TEMPLATES[reel.template].name}: ${reel.data.title || ""}`);
   }
 

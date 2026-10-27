@@ -40,6 +40,15 @@ export const LOOKS = {
     foot: B.ink, foot2: B.navy, pill: B.orange, pillText: B.ink, pill2: B.ink, pill2Text: B.cream,
     end: "#45DBE0", endTitle: B.cream, endText: B.ink, endHandle: B.ink,
   },
+  lime: {
+    name: "Lime", swatch: "#8EEA3A",
+    bg: ["#E6FFB8", "#B8F75A", "#5CCB2A"], rays: ["rgba(255,243,224,.22)", "rgba(69,219,224,.10)"],
+    title: B.cream, titleStroke: B.ink, titleShadow: B.ink, kicker: B.ink, body: B.ink, tag: B.navy,
+    ring: B.cream, ringGlow: "rgba(255,243,224,.55)", photoBg: "#E9FFC8",
+    row: B.cream, rowLine: B.ink, rowName: B.navy, rowDesc: "#2F4A2A",
+    foot: B.ink, foot2: B.navy, pill: B.orange, pillText: B.ink, pill2: B.ink, pill2Text: B.lime,
+    end: "#B8F75A", endTitle: B.cream, endText: B.ink, endHandle: B.ink,
+  },
   night: {
     name: "Night", swatch: "#071417",
     bg: ["#1A2C33", "#0C2A30", "#071417"], rays: ["rgba(243,111,3,.07)", "rgba(192,255,91,.045)"],
