@@ -33,7 +33,7 @@ export function sampleTv() {
         { id: "bingo", title: "Bingo Night", repeat: "weekly", weekday: 5, time: "8:00 PM", banner: "Every Friday", details: "Cash prizes" },
         { id: "comedy", title: "Catch All Comedy", repeat: "monthly", weekday: 1, nth: -1, time: "8:00 PM", banner: "Last Monday Monthly", details: "Grab the mic — all welcome" },
         { id: "openmic", title: "Acoustic Open Mic", repeat: "once", date: inDays(0), time: "8:00 PM", banner: "Live Music", details: "Acoustic jam sesh" },
-        { id: "masq", title: "Crimson Masquerade", repeat: "once", date: inDays(3), time: "8:00 PM", banner: "Costume Party", details: "Victorian gothic vampire masquerade murder mystery" },
+        { id: "costume", title: "Costume Party", repeat: "once", date: inDays(3), time: "8:00 PM", banner: "Sample event", details: "Demo mode sample event" },
         { id: "food", title: "Food Truck Saturday", repeat: "once", date: inDays(5), time: "6:00 PM", banner: "Food Truck", details: "Tacos in the lot all evening" },
       ],
     },

@@ -12,7 +12,9 @@ export const PAPERS = {
 export const LOGO = "/board/assets/mandarin-logo.png";
 export const DEFAULT_ADDRESS = "11018 Old Saint Augustine Rd · Mandarin";
 export const DEFAULT_TAGLINE = "Jacksonville's First Kava Bar";
-export const THEMES = { dark: "Dark (brand look)", light: "Light (uses less ink)" };
+// Both print on a light page. ("dark" was removed to save ink; old menus saved as dark show as Color.)
+export const THEMES = { light: "Color", bw: "Black & white" };
+export const themeOf = (t) => (t === "bw" ? "bw" : "light");
 // Menus saved before the tagline changed.
 const tagOf = (t) => (t == null || /^coffee\s*&\s*cocktails$/i.test(String(t).trim()) ? DEFAULT_TAGLINE : t);
 
@@ -35,7 +37,7 @@ export function renderMenu(menu) {
   const paper = PAPERS[m.paper] ? m.paper : "letter";
   const sections = (m.sections || []).filter((s) => s.title || (s.items || []).some((i) => i.name));
   const tag = tagOf(m.tagline);
-  return h("div", { class: `mm-page mm-${paper}${m.theme === "light" ? " mm-light" : ""}` },
+  return h("div", { class: `mm-page mm-${paper} mm-light${themeOf(m.theme) === "bw" ? " mm-bw" : ""}` },
     h("div", { class: "mm-frame" },
       m.address ?? DEFAULT_ADDRESS ? h("div", { class: "mm-addr" }, m.address ?? DEFAULT_ADDRESS) : null,
       h("div", { class: "mm-head" },

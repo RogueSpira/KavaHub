@@ -242,6 +242,11 @@ export async function saveQuest(session, qid, { title, details, repeat, open, st
   const ref = await F.addDoc(col(`${SQ}/items`), { ...data, createdAt: F.serverTimestamp(), createdBy: session.me.name });
   return ref.id;
 }
+// Board settings. maxShown: how many quests staff see at once (0 = all).
+export function watchQuestSettings(cb) {
+  return F.onSnapshot(docRef(`${SQ}/settings/board`), (d) => cb(d.exists() ? d.data() : {}), (e) => { console.warn("[hub] quest settings", e); cb({}); });
+}
+export const saveQuestSettings = (session, { maxShown }) => F.setDoc(docRef(`${SQ}/settings/board`), { maxShown, updatedAt: F.serverTimestamp(), updatedBy: session.me.name });
 export const setQuestOpen = (session, qid, open) => F.updateDoc(docRef(`${SQ}/items/${qid}`), { open, updatedAt: F.serverTimestamp(), updatedBy: session.me.name });
 export const deleteQuest = (qid) => F.deleteDoc(docRef(`${SQ}/items/${qid}`));
 export function watchQuestSubs(cb) {

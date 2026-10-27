@@ -315,7 +315,10 @@ export const TEMPLATES = {
   },
   event: {
     name: "Event promo", icon: "🎉",
-    fields: [["kicker", "Small line on top", "This Friday"], ["title", "Event", "Crimson Masquerade"], ["when", "Date & time", "Fri, Oct 30 · 8 PM"], ["desc", "Details", "Victorian gothic vampire masquerade. Costumes encouraged!"]],
+    // Starts empty (the examples only show as hints) so no made-up event can end up in a real post.
+    // Fill it in, or pick an event from TV Screens.
+    blank: true,
+    fields: [["kicker", "Small line on top", "This Friday"], ["title", "Event", "Event name"], ["when", "Date & time", "Fri · 8 PM"], ["desc", "Details", "What's happening"]],
     photo: "Flyer or photo", end: "See you there",
     draw(g, L, t, d, a) {
       stack(g, L, t, a, [
@@ -360,10 +363,10 @@ export const TEMPLATES = {
   },
   week: {
     name: "This week at Mandarin", icon: "📅",
-    fields: [["kicker", "Small line on top", "Oct 27 – Nov 2"], ["title", "Title", "This Week at Mandarin"]],
+    fields: [["kicker", "Small line on top", ""], ["title", "Title", "This Week at Mandarin"]],
     list: { label: "Days", max: 7, addLabel: "+ Add a day",
       top: [["day", "Day", 12, "rm-day"], ["name", "What's happening", 40, "rm-grow"]], below: ["time", "Time (optional)", 30], photo: true,
-      sample: [{ day: "Tue 10/27", name: "Trivia Night", time: "8 PM" }, { day: "Thu 10/29", name: "Karaoke", time: "9 PM" }, { day: "Fri 10/30", name: "Crimson Masquerade", time: "8 PM" }] },
+      sample: [] }, // filled from TV Screens, never made-up events
     photo: null, end: "See you this week",
     // One row per day: a day block on the left (weekday + date), the event and time beside it.
     draw(g, L, t, d, a) {

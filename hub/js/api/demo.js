@@ -388,6 +388,9 @@ export async function saveQuest(session, qid, { title, details, repeat, open, st
   const x = { id: id("q"), ...data, createdAt: now(), createdBy: meName() };
   quests.unshift(x); changed(); return x.id;
 }
+let questSettings = { maxShown: 0 };
+export function watchQuestSettings(cb) { return watch(() => cb(structuredClone(questSettings))); }
+export async function saveQuestSettings(session, { maxShown }) { await wait(80); needQuest(2); questSettings = { maxShown }; changed(); }
 export async function setQuestOpen(session, qid, open) { await wait(80); needQuest(2); Object.assign(quests.find((x) => x.id === qid), { open, updatedAt: now() }); changed(); }
 export async function deleteQuest(qid) { await wait(80); needQuest(2); const i = quests.findIndex((x) => x.id === qid); if (i >= 0) quests.splice(i, 1); changed(); }
 export function watchQuestSubs(cb) { return watch(() => cb(structuredClone(qsubs).sort((a, b) => b.at - a.at))); }

@@ -19,7 +19,7 @@ const GREEN_EVERY = 5;
 export function mount(el, ctx) {
   const manage = ctx.level >= 2;
   const view = ctx.sub[0] || "board";
-  let quests = null, subs = null, failed = false, people = null, period = "month";
+  let quests = null, subs = null, failed = false, people = null, period = "month", settings = {};
   const pane = h("section", { class: "pane" });
   const nav = h("nav", { class: "tabs", role: "tablist" });
   add(el, nav, pane);
@@ -40,6 +40,7 @@ export function mount(el, ctx) {
   const stops = [
     ctx.api.watchQuests((list, err) => { if (err) failed = true; quests = list || []; repaint(); }),
     ctx.api.watchQuestSubs((list, err) => { if (err) failed = true; subs = list || []; repaint(); }),
+    ctx.api.watchQuestSettings((d) => { settings = d || {}; repaint(); }),
     // Managers get the full staff list so they can give stars to anyone.
     manage ? ctx.api.watchUsers((list) => { people = (list || []).filter((u) => u.active !== false); repaint(); }) : () => {},
   ];
@@ -63,12 +64,18 @@ export function mount(el, ctx) {
       if (notReady()) return;
       const open = quests.filter((q) => q.open);
       const unlocked = open.filter((q) => !isLocked(q));
-      const ready = unlocked.filter((q) => !doneThisRound(q)), resting = unlocked.filter(doneThisRound);
+      const available = unlocked.filter((q) => !doneThisRound(q)), resting = unlocked.filter(doneThisRound);
+      // Only show a few at a time (set in Edit quests), oldest first, so nobody cherry-picks. One
+      // already waiting for approval keeps its spot until it's reviewed; then the next one moves up.
+      const max = settings.maxShown || 0;
+      const queue = [...available].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+      const ready = max ? queue.slice(0, max) : queue, hidden = available.length - ready.length;
       const locked = open.filter(isLocked).sort((a, b) => a.unlockOn.localeCompare(b.unlockOn));
       add(clear(pane), h("div", { class: "sq-split" },
         h("div", { class: "sq-col-quests" },
           h("h3", { class: "sq-h" }, "🗺️ Side Quests"),
-          ready.length ? h("div", { class: "sq-list" }, ready.map(questCard))
+          ready.length ? h("div", { class: "sq-list" }, ready.map(questCard),
+              hidden ? h("p", { class: "muted small sq-more" }, `More quests unlock as these get done${manage ? ` (${hidden} waiting · only managers see this count)` : ""}.`) : null)
             : h("div", { class: "card empty-card" }, h("p", {}, "No side quests right now."), manage ? h("button", { class: "btn primary", type: "button", onclick: () => ctx.navigate(`${ctx.base}/edit`) }, "Add quests") : null),
           resting.length ? [h("h3", { class: "tv-h3" }, "✅ Done for now"), h("div", { class: "sq-list" }, resting.map(questCard))] : null,
           locked.length ? [h("h3", { class: "tv-h3" }, "🔒 Coming up"), h("div", { class: "sq-list" }, locked.map(questCard))] : null),
@@ -354,6 +361,13 @@ export function mount(el, ctx) {
       add(clear(pane),
         h("div", { class: "pane-head" }, h("p", { class: "muted" }, "One-time quests come off the board once approved. Recurring ones reopen on their schedule. Anytime ones stay up."),
           h("button", { class: "btn primary", type: "button", onclick: () => editQuest(null) }, "+ New quest")),
+        h("div", { class: "card sq-limit" },
+          field("Quests on the board at a time", h("select", { class: "input", onchange: async (e) => {
+            const maxShown = Number(e.target.value);
+            try { await ctx.api.saveQuestSettings(ctx.session(), { maxShown }); ctx.log("Changed side quest limit", maxShown ? String(maxShown) : "All"); ctx.toast("Saved"); }
+            catch (err) { ctx.toast(err.message, "err"); }
+          } }, [0, 1, 2, 3, 4, 5, 6, 8, 10].map((n) => h("option", { value: n, selected: (settings.maxShown || 0) === n }, n ? String(n) : "All"))),
+            "Staff see this many at once, oldest first. When one is done, the next one shows up.")),
         sorted.length ? h("div", { class: "rows" }, sorted.map((q) => {
           const done = subs.filter((s) => s.questId === q.id && s.status === "approved").length;
           return h("button", { type: "button", class: `row${q.open ? "" : " row-off"}`, onclick: () => editQuest(q) },

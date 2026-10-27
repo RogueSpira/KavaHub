@@ -130,7 +130,7 @@ export function mount(el, ctx) {
 
   const fillDefaults = () => {
     const tpl = TEMPLATES[reel.template];
-    reel.data = Object.fromEntries(tpl.fields.map(([k, , ex]) => [k, ex]));
+    reel.data = Object.fromEntries(tpl.fields.map(([k, , ex]) => [k, tpl.blank ? "" : ex]));
     if (tpl.list) reel.data.items = structuredClone(tpl.list.sample || []);
     reel.data.end = tpl.end;
     if (reel.template === "week" && tv) fillWeek();
@@ -168,14 +168,14 @@ export function mount(el, ctx) {
         field("Length", seg(LENGTHS.map((s) => ({ value: s, label: `${s} sec` })), reel.seconds, (v) => { reel.seconds = v; restart(); }))),
       pullBox,
       h("div", { class: "card form" },
-        tpl.fields.map(([k, label]) => field(label, input(k, k === "desc" ? "textarea" : "text"))),
+        tpl.fields.map(([k, label, ex]) => field(label, input(k, k === "desc" ? "textarea" : "text", ex))),
         tpl.photo ? field(tpl.photo, photoPicker()) : null,
         tpl.list ? listEditor(tpl.list) : null,
         field("Last screen says", input("end", "text"), "Shows over the logo at the very end.")));
     paintPulls();
   }
-  function input(k, kind) {
-    const attrs = { class: kind === "textarea" ? "input textarea" : "input", maxlength: k === "desc" ? "140" : "60",
+  function input(k, kind, hint = "") {
+    const attrs = { class: kind === "textarea" ? "input textarea" : "input", maxlength: k === "desc" ? "140" : "60", placeholder: hint,
       oninput: (e) => { reel.data[k] = e.target.value; } };
     return kind === "textarea" ? h("textarea", { ...attrs, rows: "2" }, reel.data[k] || "") : h("input", { ...attrs, value: reel.data[k] || "" });
   }
