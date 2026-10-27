@@ -709,3 +709,7 @@ button.cl-row:active { transform: scale(.99); }
 .rm-result { display: grid; gap: 10px; justify-items: center; }
 .rm-video { width: 100%; max-width: 280px; border-radius: 12px; background: #000; }
 @media (max-width: 900px) { .mm-tool[data-pane="edit"] .mm-preview { display: none; } }
+.rm-looks { display: flex; flex-wrap: wrap; gap: 8px; }
+.rm-look { display: inline-flex; align-items: center; gap: 8px; min-height: 46px; padding: 0 14px; border-radius: 999px; border: 1.5px solid var(--line); background: transparent; font-family: var(--f-label); font-weight: 600; }
+.rm-look.on { border-color: var(--orange); background: color-mix(in srgb, var(--orange) 16%, transparent); }
+.rm-swatch { width: 22px; height: 22px; border-radius: 50%; border: 2px solid rgba(255, 243, 224, .6); }

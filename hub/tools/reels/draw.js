@@ -1,189 +1,307 @@
 // Draws one frame of a reel onto a 1080×1920 canvas at time t (seconds).
-// Same look as the menus and TV board: ink ground, orange/lime sunburst, the Mandarin wordmark,
-// Bungee headlines (neon green), orange badges, cream copy. Everything is drawn from scratch each
-// frame, so the preview and the exported video are identical.
+// Layout first, animation second: every block (small line, photo, name, pill, description) is
+// measured at its final size and stacked top-to-bottom inside a safe area, so nothing can overlap.
+// Animation only fades/slides blocks into their spot. The photo takes whatever height is left.
 export const W = 1080, H = 1920;
-// Instagram puts its buttons and caption over the bottom of a reel, so everything that matters
-// stays above FOOT (and the address line sits just above that area).
-const FOOT = 1610;
 export const DISPLAY = "'Bungee Menu', 'Bungee', sans-serif";
 export const BODY = "'DM Sans', 'Segoe UI', sans-serif";
-const C = { ink: "#071417", panel: "#123035", navy: "#0C2A30", cream: "#FFF3E0", dim: "#DFE9DC", neon: "#34E209", lime: "#C0FF5B", teal: "#45DBE0", orange: "#F36F03", orange2: "#FF8A2A" };
+const B = { ink: "#071417", panel: "#123035", navy: "#0C2A30", cream: "#FFF3E0", dim: "#DFE9DC", neon: "#34E209", lime: "#C0FF5B", teal: "#45DBE0", orange: "#F36F03", orange2: "#FF8A2A" };
+
+// Content lives between TOP and BOTTOM. Instagram covers the very bottom with its caption and
+// buttons, so the address line sits at FOOT, above that.
+const TOP = 500, BOTTOM = 1540, FOOT = 1630, GAP = 34;
+
+/* ---------- looks (from the brand kit) ---------- */
+export const LOOKS = {
+  cream: {
+    name: "Cream", swatch: "#FFF3E0",
+    bg: ["#FFF8EC", "#FFEBD2", "#FFD9B0"], rays: ["rgba(243,111,3,.10)", "rgba(52,226,9,.06)"],
+    title: B.navy, titleShadow: B.orange, kicker: "#D45A00", body: "#24414A", tag: "#D45A00",
+    ring: B.orange, ringGlow: "rgba(243,111,3,.35)", photoBg: "#FCE7CF",
+    row: "#FFFFFF", rowLine: B.navy, rowName: B.navy, rowDesc: "#4A6168",
+    foot: "#24414A", foot2: "#D45A00", pill: B.orange, pillText: B.ink, pill2: B.navy, pill2Text: B.cream,
+    end: "#FFF3E0", endTitle: B.navy, endText: "#24414A", endHandle: "#D45A00",
+  },
+  sunset: {
+    name: "Sunset", swatch: "#F36F03",
+    bg: ["#FFB066", "#FF8A2A", "#E65C00"], rays: ["rgba(255,243,224,.16)", "rgba(255,207,58,.12)"],
+    title: B.cream, titleStroke: B.ink, titleShadow: B.ink, kicker: B.ink, body: B.ink, tag: B.ink,
+    ring: B.cream, ringGlow: "rgba(255,243,224,.5)", photoBg: "#FFD3A6",
+    row: B.cream, rowLine: B.ink, rowName: B.navy, rowDesc: "#4A3A2C",
+    foot: B.ink, foot2: B.navy, pill: B.ink, pillText: B.cream, pill2: B.cream, pill2Text: B.ink, badge: B.lime,
+    end: "#F36F03", endTitle: B.cream, endText: B.ink, endHandle: B.ink,
+  },
+  lagoon: {
+    name: "Lagoon", swatch: "#45DBE0",
+    bg: ["#9FF0F2", "#45DBE0", "#1BA8AE"], rays: ["rgba(255,243,224,.18)", "rgba(192,255,91,.12)"],
+    title: B.cream, titleStroke: B.ink, titleShadow: B.ink, kicker: B.ink, body: B.ink, tag: B.navy,
+    ring: B.cream, ringGlow: "rgba(255,243,224,.5)", photoBg: "#BDF5F6",
+    row: B.cream, rowLine: B.ink, rowName: B.navy, rowDesc: "#2C4A4F",
+    foot: B.ink, foot2: B.navy, pill: B.orange, pillText: B.ink, pill2: B.ink, pill2Text: B.cream,
+    end: "#45DBE0", endTitle: B.cream, endText: B.ink, endHandle: B.ink,
+  },
+  night: {
+    name: "Night", swatch: "#071417",
+    bg: ["#1A2C33", "#0C2A30", "#071417"], rays: ["rgba(243,111,3,.07)", "rgba(192,255,91,.045)"],
+    title: B.neon, titleGlow: "rgba(52,226,9,.7)", kicker: B.lime, body: B.cream, tag: B.orange2,
+    ring: B.teal, ringGlow: "rgba(69,219,224,.6)", photoBg: B.panel,
+    row: "rgba(18,48,53,.95)", rowLine: B.teal, rowName: B.cream, rowDesc: B.dim,
+    foot: B.dim, foot2: B.teal, pill: B.orange, pillText: B.ink, pill2: B.teal, pill2Text: B.ink,
+    end: "#071417", endTitle: B.neon, endText: B.cream, endHandle: B.orange2,
+  },
+};
 
 /* ---------- easing & timing ---------- */
 const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
 const easeOut = (x) => 1 - Math.pow(1 - x, 3);
 const back = (x) => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); };
-// 0→1 progress of something that starts at `at` and takes `dur` seconds.
 const prog = (t, at, dur = 0.6) => clamp((t - at) / dur);
 
-/* ---------- drawing helpers ---------- */
+/* ---------- text measuring ---------- */
 function roundRect(g, x, y, w, h, r) {
   g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
   g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
 }
-// Word-wraps text into lines that fit maxW; shrinks the font (down to min) to fit maxLines.
-function fitLines(g, text, font, size, maxW, maxLines, min = size * 0.55) {
+// Wraps text to fit maxW in at most maxLines, shrinking the font if needed. Returns lines + size.
+function fit(g, str, font, size, maxW, maxLines, min = Math.round(size * 0.5)) {
   let s = size, lines = [];
-  for (; s >= min; s -= 4) {
+  const words = String(str || "").split(/\s+/).filter(Boolean);
+  for (; s >= min; s -= 2) {
     g.font = font.replace("{s}", s);
     lines = []; let line = "";
-    for (const word of String(text || "").split(/\s+/).filter(Boolean)) {
-      const test = line ? `${line} ${word}` : word;
-      if (g.measureText(test).width <= maxW || !line) line = test; else { lines.push(line); line = word; }
+    for (const w of words) {
+      const test = line ? `${line} ${w}` : w;
+      if (g.measureText(test).width <= maxW || !line) line = test; else { lines.push(line); line = w; }
     }
     if (line) lines.push(line);
     if (lines.length <= maxLines && lines.every((l) => g.measureText(l).width <= maxW)) break;
   }
-  return { lines, size: s };
+  if (lines.length > maxLines) { lines = lines.slice(0, maxLines); lines[maxLines - 1] = `${lines[maxLines - 1].replace(/\W*\S*$/, "")}…`; }
+  return { lines, size: s, font: font.replace("{s}", s) };
 }
-function text(g, str, x, y, { font, size, color, align = "center", glow, stroke, lineH = 1.08, maxW = W - 160, maxLines = 3, upper } = {}) {
+// A text block measured up front: { h, draw(y) }.
+function textBlock(g, str, { font, size, maxW = W - 180, maxLines = 2, lineH = 1.1, upper = false, color, glow, stroke, shadow, align = "center", x = W / 2, min }) {
   const s = upper ? String(str || "").toUpperCase() : String(str || "");
-  const f = fitLines(g, s, font, size, maxW, maxLines);
-  g.font = font.replace("{s}", f.size); g.textAlign = align; g.textBaseline = "alphabetic";
+  if (!s.trim()) return null;
+  const f = fit(g, s, font, size, maxW, maxLines, min);
   const lh = f.size * lineH;
-  f.lines.forEach((l, i) => {
-    const yy = y + i * lh;
-    if (stroke) { g.lineWidth = stroke.w; g.strokeStyle = stroke.c; g.lineJoin = "round"; g.strokeText(l, x, yy); }
-    g.save();
-    if (glow) { g.shadowColor = glow; g.shadowBlur = f.size * 0.45; }
-    g.fillStyle = color; g.fillText(l, x, yy);
-    g.restore();
-  });
-  return f.lines.length * lh;
+  return {
+    h: f.lines.length * lh,
+    draw(y) {
+      g.font = f.font; g.textAlign = align; g.textBaseline = "alphabetic";
+      f.lines.forEach((l, i) => {
+        const yy = y + f.size * 0.88 + i * lh;
+        if (shadow) { g.fillStyle = shadow; g.fillText(l, x + f.size * 0.06, yy + f.size * 0.06); }
+        if (stroke) { g.lineWidth = Math.max(6, f.size * 0.09); g.strokeStyle = stroke; g.lineJoin = "round"; g.strokeText(l, x, yy); }
+        g.save(); if (glow) { g.shadowColor = glow; g.shadowBlur = f.size * 0.45; }
+        g.fillStyle = color; g.fillText(l, x, yy); g.restore();
+      });
+    },
+  };
 }
-// Draws an image to cover a box (like CSS object-fit: cover), with a slow zoom.
+function pillBlock(g, label, { size = 44, bg, fg }) {
+  if (!String(label || "").trim()) return null;
+  const f = fit(g, label, `{s}px ${DISPLAY}`, size, W - 260, 1);
+  g.font = f.font;
+  const w = g.measureText(label).width + f.size * 1.6, hgt = f.size * 1.75;
+  return {
+    h: hgt,
+    draw(y) {
+      roundRect(g, (W - w) / 2, y, w, hgt, hgt / 2); g.fillStyle = bg; g.fill();
+      g.font = f.font; g.textAlign = "center"; g.textBaseline = "middle"; g.fillStyle = fg; g.fillText(label, W / 2, y + hgt / 2 + 3);
+    },
+  };
+}
+
+/* ---------- pieces ---------- */
 function cover(g, img, x, y, w, h, zoom = 1) {
   const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
   if (!iw || !ih) return;
-  const k = Math.max(w / iw, h / ih) * zoom;
-  const dw = iw * k, dh = ih * k;
+  const k = Math.max(w / iw, h / ih) * zoom, dw = iw * k, dh = ih * k;
   g.drawImage(img, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
 }
-function photoFrame(g, img, x, y, w, h, t, at, { r = 48, circle = false } = {}) {
-  const p = easeOut(prog(t, at, 0.7));
-  if (!p) return;
+function photo(g, L, img, x, y, w, h, t, circle) {
   g.save();
-  g.globalAlpha = p;
-  const sc = 0.9 + 0.1 * p;
-  g.translate(x + w / 2, y + h / 2 + (1 - p) * 60); g.scale(sc, sc); g.translate(-(x + w / 2), -(y + h / 2));
-  // glow ring
-  g.shadowColor = "rgba(69, 219, 224, .6)"; g.shadowBlur = 60;
-  if (circle) { g.beginPath(); g.arc(x + w / 2, y + h / 2, w / 2 + 14, 0, Math.PI * 2); } else roundRect(g, x - 14, y - 14, w + 28, h + 28, r + 12);
-  g.fillStyle = C.teal; g.fill(); g.shadowBlur = 0;
-  if (circle) { g.beginPath(); g.arc(x + w / 2, y + h / 2, w / 2, 0, Math.PI * 2); } else roundRect(g, x, y, w, h, r);
-  g.fillStyle = C.navy; g.fill(); g.clip();
-  if (img) cover(g, img, x, y, w, h, 1.04 + Math.min(0.08, (t - at) * 0.008));
-  else { g.fillStyle = C.panel; g.fillRect(x, y, w, h); g.font = `120px ${BODY}`; g.textAlign = "center"; g.fillStyle = "rgba(255,243,224,.35)"; g.fillText("🥥", x + w / 2, y + h / 2 + 40); }
+  g.shadowColor = L.ringGlow; g.shadowBlur = 50;
+  if (circle) { g.beginPath(); g.arc(x + w / 2, y + h / 2, w / 2 + 12, 0, Math.PI * 2); } else roundRect(g, x - 12, y - 12, w + 24, h + 24, 56);
+  g.fillStyle = L.ring; g.fill(); g.shadowBlur = 0;
+  if (circle) { g.beginPath(); g.arc(x + w / 2, y + h / 2, w / 2, 0, Math.PI * 2); } else roundRect(g, x, y, w, h, 46);
+  g.fillStyle = L.photoBg; g.fill(); g.clip();
+  if (img) cover(g, img, x, y, w, h, 1.03 + Math.min(0.07, t * 0.007));
+  else { g.font = `${Math.min(w, h) * 0.3}px ${BODY}`; g.textAlign = "center"; g.textBaseline = "middle"; g.globalAlpha = 0.5; g.fillText("🥥", x + w / 2, y + h / 2); }
   g.restore();
 }
-function badge(g, label, cx, cy, r, t, at) {
-  const p = prog(t, at, 0.55);
+function badge(g, L, label, cx, cy, r) {
+  g.save(); g.translate(cx, cy); g.rotate(-0.12);
+  g.shadowColor = "rgba(0,0,0,.25)"; g.shadowBlur = 24; g.shadowOffsetY = 8;
+  g.beginPath(); g.arc(0, 0, r, 0, Math.PI * 2); g.fillStyle = L.badge || B.orange; g.fill();
+  g.shadowColor = "transparent";
+  g.setLineDash([14, 10]); g.lineWidth = 6; g.strokeStyle = B.ink; g.beginPath(); g.arc(0, 0, r - 15, 0, Math.PI * 2); g.stroke(); g.setLineDash([]);
+  const f = fit(g, label, `{s}px ${DISPLAY}`, r * 0.6, r * 1.45, 1);
+  g.font = f.font; g.textAlign = "center"; g.textBaseline = "middle"; g.fillStyle = B.ink; g.fillText(label, 0, 4);
+  g.restore();
+}
+// Fade + slide a block into place starting at `at`.
+function enter(g, t, at, fn, { dist = 60, pop = null } = {}) {
+  const p = prog(t, at, pop ? 0.55 : 0.6);
   if (!p) return;
-  const s = back(p) * (1 + 0.03 * Math.sin((t - at) * 4));
-  g.save(); g.translate(cx, cy); g.rotate(-0.12); g.scale(s, s);
-  g.shadowColor = "rgba(243, 111, 3, .7)"; g.shadowBlur = 50;
-  g.beginPath(); g.arc(0, 0, r, 0, Math.PI * 2); g.fillStyle = C.orange; g.fill(); g.shadowBlur = 0;
-  g.setLineDash([14, 10]); g.lineWidth = 6; g.strokeStyle = C.ink; g.beginPath(); g.arc(0, 0, r - 16, 0, Math.PI * 2); g.stroke(); g.setLineDash([]);
-  const f = fitLines(g, label, `{s}px ${DISPLAY}`, r * 0.62, r * 1.5, 1);
-  g.font = `${f.size}px ${DISPLAY}`; g.textAlign = "center"; g.textBaseline = "middle"; g.fillStyle = C.ink; g.fillText(label, 0, 4);
-  g.restore();
+  g.save(); g.globalAlpha = easeOut(p);
+  // pop = { cx, cy }: grow out of that point with a little bounce
+  if (pop) { const s = back(p); g.translate(pop.cx, pop.cy); g.scale(s, s); g.translate(-pop.cx, -pop.cy); } else g.translate(0, (1 - easeOut(p)) * dist);
+  fn(); g.restore();
 }
-function pill(g, label, cx, cy, t, at, { bg = C.orange, fg = C.ink, size = 46 } = {}) {
-  const p = prog(t, at, 0.5);
-  if (!p) return;
-  g.save(); g.globalAlpha = p; g.translate(cx, cy); g.scale(0.85 + 0.15 * back(p), 0.85 + 0.15 * back(p));
-  g.font = `${size}px ${DISPLAY}`;
-  const w = Math.min(W - 120, g.measureText(label).width + size * 1.6), h = size * 1.7;
-  g.shadowColor = bg; g.shadowBlur = 40; roundRect(g, -w / 2, -h / 2, w, h, h / 2); g.fillStyle = bg; g.fill(); g.shadowBlur = 0;
-  g.fillStyle = fg; g.textAlign = "center"; g.textBaseline = "middle";
-  const f = fitLines(g, label, `{s}px ${DISPLAY}`, size, w - size, 1); g.font = `${f.size}px ${DISPLAY}`; g.fillText(label, 0, 3);
-  g.restore();
-}
-const slideUp = (g, t, at, fn, dist = 70) => {
-  const p = easeOut(prog(t, at, 0.6));
-  if (!p) return 0;
-  g.save(); g.globalAlpha = p; g.translate(0, (1 - p) * dist); const r = fn(); g.restore(); return r;
-};
 
-/* ---------- background, header, footer, Manny ---------- */
-function background(g, t) {
-  const grd = g.createRadialGradient(W / 2, 520, 50, W / 2, 900, 1500);
-  grd.addColorStop(0, "#14402a"); grd.addColorStop(0.45, C.navy); grd.addColorStop(1, C.ink);
+function background(g, L, t) {
+  const grd = g.createLinearGradient(0, 0, 0, H);
+  grd.addColorStop(0, L.bg[0]); grd.addColorStop(0.5, L.bg[1]); grd.addColorStop(1, L.bg[2]);
   g.fillStyle = grd; g.fillRect(0, 0, W, H);
-  // slowly turning sunburst
-  g.save(); g.translate(W / 2, 470); g.rotate(t * 0.06);
+  g.save(); g.translate(W / 2, 430); g.rotate(t * 0.06);
   for (let i = 0; i < 24; i++) {
     g.rotate((Math.PI * 2) / 24);
-    g.beginPath(); g.moveTo(0, 0); g.lineTo(-90, -2200); g.lineTo(90, -2200); g.closePath();
-    g.fillStyle = i % 2 ? "rgba(243, 111, 3, .07)" : "rgba(192, 255, 91, .045)"; g.fill();
+    g.beginPath(); g.moveTo(0, 0); g.lineTo(-95, -2300); g.lineTo(95, -2300); g.closePath();
+    g.fillStyle = L.rays[i % 2]; g.fill();
   }
   g.restore();
-  // soft vignette
-  const v = g.createRadialGradient(W / 2, H / 2, H * 0.3, W / 2, H / 2, H * 0.75);
-  v.addColorStop(0, "rgba(0,0,0,0)"); v.addColorStop(1, "rgba(0,0,0,.55)");
-  g.fillStyle = v; g.fillRect(0, 0, W, H);
 }
-function header(g, t, a) {
+function header(g, L, t, a) {
   const p = easeOut(prog(t, 0.05, 0.7));
   g.save(); g.globalAlpha = p; g.translate(0, (1 - p) * -50);
-  if (a.logo) { const w = 800, h = w * (a.logo.naturalHeight / a.logo.naturalWidth); g.drawImage(a.logo, (W - w) / 2, 120, w, h); }
-  text(g, "Jacksonville's First Kava Bar", W / 2, 420, { font: `{s}px ${DISPLAY}`, size: 40, color: C.orange2, glow: "rgba(243,111,3,.7)", upper: true, maxLines: 1 });
+  if (a.logo) { const w = 760, h = w * (a.logo.naturalHeight / a.logo.naturalWidth); g.drawImage(a.logo, (W - w) / 2, 130, w, h); }
+  const tag = textBlock(g, "Jacksonville's First Kava Bar", { font: `{s}px ${DISPLAY}`, size: 38, maxLines: 1, upper: true, color: L.tag });
+  tag?.draw(370);
   g.restore();
 }
-function footer(g, t) {
+function footer(g, L, t) {
   const p = easeOut(prog(t, 0.4, 0.8));
-  g.save(); g.globalAlpha = p * 0.9;
-  text(g, "11018 Old Saint Augustine Rd · Mandarin", W / 2, FOOT, { font: `700 {s}px ${BODY}`, size: 32, color: C.dim, upper: true, maxLines: 1 });
-  text(g, "Good vibes · Zero proof", W / 2, FOOT + 50, { font: `700 {s}px ${BODY}`, size: 26, color: C.teal, upper: true, maxLines: 1 });
+  g.save(); g.globalAlpha = p;
+  textBlock(g, "11018 Old Saint Augustine Rd · Mandarin", { font: `700 {s}px ${BODY}`, size: 32, maxLines: 1, upper: true, color: L.foot })?.draw(FOOT);
+  textBlock(g, "Good vibes · Zero proof", { font: `700 {s}px ${BODY}`, size: 26, maxLines: 1, upper: true, color: L.foot2 })?.draw(FOOT + 48);
   g.restore();
 }
 function manny(g, t, a, D) {
   if (!a.manny) return;
-  const at = D - 3.6, p = prog(t, at, 0.5), out = prog(t, D - 1.9, 0.5);
-  const k = easeOut(p) * (1 - easeOut(out));
+  const k = easeOut(prog(t, D - 3.6, 0.5)) * (1 - easeOut(prog(t, D - 1.9, 0.5)));
   if (!k) return;
-  const h = 520, w = h * (a.manny.naturalWidth / a.manny.naturalHeight);
-  g.save(); g.translate(W - w * 0.62 * k + 40, H - 520); g.rotate(-0.35 + 0.08 * Math.sin(t * 5));
-  g.drawImage(a.manny, 0, 0, w, h); g.restore();
+  const h = 480, w = h * (a.manny.naturalWidth / a.manny.naturalHeight);
+  g.save(); g.translate(W - w * 0.6 * k + 40, H - 600); g.rotate(-0.35 + 0.08 * Math.sin(t * 5)); g.drawImage(a.manny, 0, 0, w, h); g.restore();
 }
-function endCard(g, t, a, D, line) {
+function endCard(g, L, t, a, D, line) {
   const p = easeOut(prog(t, D - 1.6, 0.6));
   if (!p) return;
   g.save(); g.globalAlpha = p;
-  g.fillStyle = "rgba(7, 20, 23, .97)"; g.fillRect(0, 0, W, H);
-  if (a.logo) { const w = 900, h = w * (a.logo.naturalHeight / a.logo.naturalWidth); g.drawImage(a.logo, (W - w) / 2, 640 - (1 - p) * 40, w, h); }
-  text(g, line || "Pull up tonight", W / 2, 1080, { font: `{s}px ${DISPLAY}`, size: 84, color: C.neon, glow: "rgba(52,226,9,.7)", upper: true, maxLines: 2 });
-  text(g, "11018 Old Saint Augustine Rd · Mandarin", W / 2, 1260, { font: `700 {s}px ${BODY}`, size: 38, color: C.cream, upper: true, maxLines: 2 });
-  text(g, "@kavaandco.mandarin", W / 2, 1360, { font: `{s}px ${DISPLAY}`, size: 44, color: C.orange2, maxLines: 1 });
+  g.fillStyle = L.end; g.fillRect(0, 0, W, H);
+  background(g, L, t); g.globalAlpha = p;
+  if (a.logo) { const w = 880, h = w * (a.logo.naturalHeight / a.logo.naturalWidth); g.drawImage(a.logo, (W - w) / 2, 620 - (1 - p) * 40, w, h); }
+  const title = textBlock(g, line || "Pull up tonight", { font: `{s}px ${DISPLAY}`, size: 86, maxLines: 2, upper: true, color: L.endTitle, glow: L.titleGlow, stroke: L.titleStroke, shadow: L.titleShadow });
+  let y = 1000; title?.draw(y); y += (title?.h || 0) + 40;
+  textBlock(g, "11018 Old Saint Augustine Rd · Mandarin", { font: `700 {s}px ${BODY}`, size: 38, maxLines: 2, upper: true, color: L.endText })?.draw(y);
+  textBlock(g, "@kavaandco.mandarin", { font: `{s}px ${DISPLAY}`, size: 46, maxLines: 1, color: L.endHandle })?.draw(y + 90);
   g.restore();
 }
 
+
+/* ---------- photo card for the kavatender reel ---------- */
+// Draws the photo inside a shape (with a colored rim) inside the box x,y,w,h.
+function shaped(g, L, t, img, pathFn, box) {
+  g.save();
+  pathFn(); g.shadowColor = L.ringGlow; g.shadowBlur = 50;
+  g.lineWidth = 26; g.lineJoin = "round"; g.strokeStyle = L.ring; g.stroke(); g.shadowBlur = 0;
+  pathFn(); g.fillStyle = L.photoBg; g.fill(); g.clip();
+  const [x, y, w, h] = box;
+  if (img) cover(g, img, x, y, w, h, 1.04 + Math.min(0.07, t * 0.007));
+  else { g.font = `${Math.min(w, h) * 0.3}px ${BODY}`; g.textAlign = "center"; g.textBaseline = "middle"; g.globalAlpha = 0.5; g.fillText("🥥", x + w / 2, y + h / 2); }
+  g.restore();
+}
+const SHAPES = {
+  // A photo card, slightly turned, with two colored cards fanned out behind it.
+  tilt(g, L, t, img, x, y, w, h) {
+    const cx = x + w / 2, cy = y + h / 2, sway = Math.sin(t * 0.9) * 0.008;
+    const card = (rot, color, dx) => { g.save(); g.translate(cx + dx, cy); g.rotate(rot); roundRect(g, -w / 2, -h / 2, w, h, 40); g.fillStyle = color; g.fill(); g.restore(); };
+    card(0.07, L === LOOKS.lagoon ? B.lime : B.teal, 26); card(-0.09, L === LOOKS.sunset ? B.lime : B.orange, -22);
+    g.save(); g.translate(cx, cy); g.rotate(-0.03 + sway); g.translate(-cx, -cy);
+    shaped(g, { ...L, ring: B.cream }, t, img, () => roundRect(g, x, y, w, h, 40), [x, y, w, h]);
+    g.restore();
+  },
+};
+// The name on a tilted color band that runs across the bottom of the photo, past its edges.
+function ribbon(g, L, t, name, cy) {
+  const label = String(name || "").toUpperCase().trim();
+  if (!label) return;
+  const band = L === LOOKS.sunset ? B.ink : B.orange;
+  g.save(); g.translate(W / 2, cy); g.rotate(-0.07 + Math.sin(t * 1.1) * 0.006);
+  g.shadowColor = "rgba(0,0,0,.28)"; g.shadowBlur = 30; g.shadowOffsetY = 10;
+  const bh = 170;
+  g.beginPath(); g.moveTo(-W * 0.62, -bh / 2); g.lineTo(W * 0.62, -bh / 2 - 6); g.lineTo(W * 0.6, bh / 2); g.lineTo(-W * 0.6, bh / 2 + 6); g.closePath();
+  g.fillStyle = band; g.fill(); g.shadowColor = "transparent";
+  const f = fit(g, label, `{s}px ${DISPLAY}`, 132, W - 160, 1, 40);
+  g.font = f.font; g.textAlign = "center"; g.textBaseline = "middle";
+  g.lineWidth = Math.max(6, f.size * 0.09); g.lineJoin = "round"; g.strokeStyle = B.ink; g.strokeText(label, 0, 6);
+  g.fillStyle = B.ink; g.fillText(label, f.size * 0.06, 6 + f.size * 0.06);
+  g.fillStyle = B.cream; g.fillText(label, 0, 6);
+  g.restore();
+}
+
+/* ---------- stacked layout for the photo templates ---------- */
+// blocks: [{ key, block | photo: { aspect, circle }, at }]. Measures all text, gives the photo the
+// rest of the room (within limits), and centers the whole stack in the safe area.
+function stack(g, L, t, a, items, d) {
+  const measured = items.filter((x) => x.photo || x.block);
+  const textH = measured.filter((x) => x.block).reduce((s, x) => s + x.block.h, 0);
+  const gaps = GAP * (measured.length - 1);
+  const ph = measured.find((x) => x.photo);
+  let photoH = 0, photoW = 0;
+  if (ph) {
+    const room = BOTTOM - TOP - textH - gaps;
+    photoH = clamp(room, 300, ph.photo.circle ? 560 : 700);
+    photoW = ph.photo.circle ? photoH : Math.min(W - 220, photoH * ph.photo.aspect);
+  }
+  const total = textH + gaps + photoH;
+  let y = TOP + Math.max(0, (BOTTOM - TOP - total) / 2);
+  for (const x of measured) {
+    const yy = y;
+    if (x.photo) {
+      const px = (W - photoW) / 2;
+      enter(g, t, x.at, () => photo(g, L, a.photo, px, yy, photoW, photoH, t, x.photo.circle), { dist: 80 });
+      if (d.price && !x.photo.circle) { const bx = px + photoW - 96, by = yy + photoH - 96; enter(g, t, x.at + 1.6, () => badge(g, L, d.price, bx, by, 100), { pop: { cx: bx, cy: by } }); }
+      y += photoH + GAP;
+    } else {
+      enter(g, t, x.at, () => x.block.draw(yy), { pop: x.pop ? { cx: W / 2, cy: yy + x.block.h / 2 } : null });
+      y += x.block.h + GAP;
+    }
+  }
+}
+
 /* ---------- templates ---------- */
+const titleStyle = (L, size, lines = 2) => ({ font: `{s}px ${DISPLAY}`, size, maxLines: lines, upper: true, color: L.title, glow: L.titleGlow, stroke: L.titleStroke, shadow: L.titleShadow });
+const kickerStyle = (L) => ({ font: `{s}px ${DISPLAY}`, size: 42, maxLines: 1, upper: true, color: L.kicker });
+const bodyStyle = (L, lines = 2) => ({ font: `500 {s}px ${BODY}`, size: 42, maxLines: lines, lineH: 1.25, color: L.body, maxW: W - 220 });
+
 export const TEMPLATES = {
   drink: {
     name: "Drink spotlight", icon: "🥥",
     fields: [["kicker", "Small line on top", "Try it tonight"], ["title", "Drink name", "Mango Tango"], ["desc", "Description", "Raspberry, mango and your choice of kava or kratom."], ["price", "Price (optional)", "$10"]],
     photo: "Drink photo", end: "Come try it",
-    draw(g, t, d, a) {
-      slideUp(g, t, 0.5, () => text(g, d.kicker, W / 2, 520, { font: `{s}px ${DISPLAY}`, size: 44, color: C.lime, upper: true, glow: "rgba(192,255,91,.6)", maxLines: 1 }));
-      photoFrame(g, a.photo, 250, 575, 580, 600, t, 0.7);
-      if (d.price) badge(g, d.price, 810, 1120, 110, t, 2.3);
-      const th = slideUp(g, t, 1.3, () => text(g, d.title, W / 2, 1300, { font: `{s}px ${DISPLAY}`, size: 96, color: C.neon, glow: "rgba(52,226,9,.75)", upper: true, maxLines: 2 })) || 100;
-      slideUp(g, t, 1.8, () => text(g, d.desc, W / 2, 1300 + th + 10, { font: `500 {s}px ${BODY}`, size: 42, color: C.cream, maxLines: 2, lineH: 1.25 }));
+    draw(g, L, t, d, a) {
+      stack(g, L, t, a, [
+        { block: textBlock(g, d.kicker, kickerStyle(L)), at: 0.5 },
+        { photo: { aspect: 0.95 }, at: 0.7 },
+        { block: textBlock(g, d.title, titleStyle(L, 92)), at: 1.3 },
+        { block: textBlock(g, d.desc, bodyStyle(L)), at: 1.8 },
+      ], d);
     },
   },
   event: {
     name: "Event promo", icon: "🎉",
     fields: [["kicker", "Small line on top", "This Friday"], ["title", "Event", "Crimson Masquerade"], ["when", "Date & time", "Fri, Oct 30 · 8 PM"], ["desc", "Details", "Victorian gothic vampire masquerade. Costumes encouraged!"]],
     photo: "Flyer or photo", end: "See you there",
-    draw(g, t, d, a) {
-      slideUp(g, t, 0.5, () => text(g, d.kicker, W / 2, 520, { font: `{s}px ${DISPLAY}`, size: 48, color: C.lime, upper: true, glow: "rgba(192,255,91,.6)", maxLines: 1 }));
-      photoFrame(g, a.photo, 270, 570, 540, 540, t, 0.7);
-      const th = slideUp(g, t, 1.3, () => text(g, d.title, W / 2, 1230, { font: `{s}px ${DISPLAY}`, size: 92, color: C.neon, glow: "rgba(52,226,9,.75)", upper: true, maxLines: 2 })) || 100;
-      const py = 1230 + th + 10;
-      if (d.when) pill(g, d.when, W / 2, py, t, 1.9, { size: 42 });
-      slideUp(g, t, 2.4, () => text(g, d.desc, W / 2, py + (d.when ? 110 : 30), { font: `500 {s}px ${BODY}`, size: 40, color: C.cream, maxLines: 2, lineH: 1.22 }));
+    draw(g, L, t, d, a) {
+      stack(g, L, t, a, [
+        { block: textBlock(g, d.kicker, kickerStyle(L)), at: 0.5 },
+        { photo: { aspect: 1 }, at: 0.7 },
+        { block: textBlock(g, d.title, titleStyle(L, 88)), at: 1.3 },
+        { block: pillBlock(g, d.when, { size: 42, bg: L.pill, fg: L.pillText }), at: 1.9, pop: true },
+        { block: textBlock(g, d.desc, bodyStyle(L)), at: 2.4 },
+      ], { ...d, price: "" });
     },
   },
   specials: {
@@ -191,36 +309,50 @@ export const TEMPLATES = {
     fields: [["kicker", "Small line on top", "Happy hour 9–10 PM"], ["title", "Title", "Tonight's Specials"]],
     list: { label: "Drinks", max: 5, keys: [["name", "Drink"], ["desc", "Description"], ["price", "Price"]] },
     photo: null, end: "Pull up tonight",
-    draw(g, t, d) {
-      slideUp(g, t, 0.5, () => text(g, d.kicker, W / 2, 540, { font: `{s}px ${DISPLAY}`, size: 44, color: C.lime, upper: true, glow: "rgba(192,255,91,.6)", maxLines: 1 }));
-      slideUp(g, t, 0.8, () => text(g, d.title, W / 2, 660, { font: `{s}px ${DISPLAY}`, size: 96, color: C.neon, glow: "rgba(52,226,9,.75)", upper: true, maxLines: 2 }));
+    draw(g, L, t, d) {
+      const kicker = textBlock(g, d.kicker, kickerStyle(L));
+      const title = textBlock(g, d.title, titleStyle(L, 90));
       const items = (d.items || []).filter((i) => i.name).slice(0, 5);
-      const rowH = Math.min(180, 820 / Math.max(1, items.length));
+      let y = TOP;
+      if (kicker) { enter(g, t, 0.5, () => kicker.draw(TOP)); y += kicker.h + GAP; }
+      if (title) { const yy = y; enter(g, t, 0.8, () => title.draw(yy)); y += title.h + GAP + 6; }
+      const rowGap = 22;
+      const rowH = items.length ? Math.min(176, (BOTTOM - y - rowGap * (items.length - 1)) / items.length) : 0;
       items.forEach((it, i) => {
-        const at = 1.4 + i * 0.45, p = easeOut(prog(t, at, 0.55));
-        if (!p) return;
-        const y = 760 + i * rowH;
-        g.save(); g.globalAlpha = p; g.translate((1 - p) * -120, 0);
-        roundRect(g, 90, y, W - 180, rowH - 30, 36); g.fillStyle = "rgba(18, 48, 53, .92)"; g.fill();
-        g.lineWidth = 5; g.strokeStyle = C.teal; g.shadowColor = "rgba(69,219,224,.5)"; g.shadowBlur = 24; g.stroke(); g.shadowBlur = 0;
-        const hasDesc = !!it.desc && rowH > 140;
-        text(g, it.name, 140, y + (hasDesc ? 72 : rowH / 2 + 8), { font: `{s}px ${DISPLAY}`, size: 54, color: C.cream, align: "left", maxW: W - 480, maxLines: 1, upper: true });
-        if (hasDesc) text(g, it.desc, 140, y + 122, { font: `500 {s}px ${BODY}`, size: 34, color: C.dim, align: "left", maxW: W - 480, maxLines: 1 });
-        g.restore();
-        if (it.price) badge(g, it.price, W - 190, y + (rowH - 30) / 2, Math.min(78, (rowH - 30) / 2 + 6), t, at + 0.3);
+        const ry = y + i * (rowH + rowGap), at = 1.4 + i * 0.45;
+        const hasDesc = !!it.desc && rowH >= 130;
+        const nameB = textBlock(g, it.name, { font: `{s}px ${DISPLAY}`, size: Math.min(54, rowH * 0.36), maxLines: 1, upper: true, color: L.rowName, align: "left", x: 136, maxW: W - 470 });
+        const descB = hasDesc ? textBlock(g, it.desc, { font: `500 {s}px ${BODY}`, size: Math.min(34, rowH * 0.22), maxLines: 1, color: L.rowDesc, align: "left", x: 136, maxW: W - 470 }) : null;
+        enter(g, t, at, () => {
+          roundRect(g, 90, ry, W - 180, rowH, 34); g.fillStyle = L.row; g.fill(); g.lineWidth = 5; g.strokeStyle = L.rowLine; g.stroke();
+          const inner = (nameB?.h || 0) + (descB ? descB.h + 6 : 0);
+          let ty = ry + (rowH - inner) / 2;
+          nameB?.draw(ty); if (descB) descB.draw(ty + nameB.h + 6);
+        }, { dist: 0 });
+        if (it.price) enter(g, t, at + 0.3, () => badge(g, L, it.price, W - 190, ry + rowH / 2, Math.min(74, rowH / 2 + 4)), { pop: { cx: W - 190, cy: ry + rowH / 2 } });
       });
     },
   },
   staff: {
     name: "Meet your kavatender", icon: "🧑‍🍳",
     fields: [["kicker", "Small line on top", "Meet your kavatender"], ["title", "Name", "Wheatyn"], ["desc", "Fun fact / favorite drink", "Go-to drink: The Wheatyn Special. Ask about the coconut cream."], ["when", "Shifts (optional)", "Tuesdays & Fridays"]],
-    photo: "Their photo", end: "Come say hi",
-    draw(g, t, d, a) {
-      slideUp(g, t, 0.5, () => text(g, d.kicker, W / 2, 520, { font: `{s}px ${DISPLAY}`, size: 50, color: C.lime, upper: true, glow: "rgba(192,255,91,.6)", maxLines: 1 }));
-      photoFrame(g, a.photo, 290, 580, 500, 500, t, 0.7, { circle: true });
-      slideUp(g, t, 1.3, () => text(g, d.title, W / 2, 1220, { font: `{s}px ${DISPLAY}`, size: 120, color: C.neon, glow: "rgba(52,226,9,.75)", upper: true, maxLines: 1 }));
-      if (d.when) pill(g, d.when, W / 2, 1310, t, 1.8, { size: 40, bg: C.teal });
-      slideUp(g, t, 2.3, () => text(g, d.desc, W / 2, d.when ? 1430 : 1340, { font: `500 {s}px ${BODY}`, size: 42, color: C.cream, maxLines: 3, lineH: 1.22 }));
+    photo: "Today's photo (snap a fresh one!)", end: "Come say hi",
+    // The photo is the star: a tilted photo card (with two colored cards fanned behind it) and the name on a tilted ribbon across its
+    // bottom edge. Shifts and fun fact sit under it; leave them blank and the photo grows.
+    draw(g, L, t, d, a) {
+      const pill = pillBlock(g, d.when, { size: 40, bg: L.pill2, fg: L.pill2Text });
+      const desc = textBlock(g, d.desc, { font: `500 {s}px ${BODY}`, size: 36, maxLines: 2, lineH: 1.2, color: L.body, maxW: W - 200 });
+      const kick = pillBlock(g, d.kicker, { size: 42, bg: L.pill, fg: L.pillText });
+      const under = (pill ? pill.h + 18 : 0) + (desc ? desc.h + 18 : 0);
+      const x = 90, y = 480, w = W - 180, h = 1590 - y - under - 120;
+      const ribbonY = y + h - 30;
+
+      enter(g, t, 0.6, () => SHAPES.tilt(g, L, t, a.photo, x, y, w, h), { dist: 80 });
+      if (kick) enter(g, t, 0.95, () => { g.save(); g.translate(W / 2, y); g.rotate(0.05); g.translate(-W / 2, -y); kick.draw(y - kick.h / 2 - 6); g.restore(); }, { pop: { cx: W / 2, cy: y } });
+      enter(g, t, 1.3, () => ribbon(g, L, t, d.title, ribbonY), { pop: { cx: W / 2, cy: ribbonY } });
+      let ty = ribbonY + 120;
+      if (pill) { const yy = ty; enter(g, t, 1.8, () => pill.draw(yy), { pop: { cx: W / 2, cy: yy + pill.h / 2 } }); ty += pill.h + 18; }
+      if (desc) { const yy = ty; enter(g, t, 2.3, () => desc.draw(yy), { dist: 30 }); }
     },
   },
 };
@@ -228,16 +360,16 @@ export const TEMPLATES = {
 // One whole frame.
 export function drawFrame(g, t, reel, assets) {
   const tpl = TEMPLATES[reel.template] || TEMPLATES.drink;
+  const L = LOOKS[reel.look] || LOOKS.cream;
   const D = reel.seconds || 10;
   g.save();
-  background(g, t);
-  header(g, t, assets);
-  tpl.draw(g, t, reel.data || {}, assets);
-  footer(g, t);
+  background(g, L, t);
+  header(g, L, t, assets);
+  tpl.draw(g, L, t, reel.data || {}, assets);
+  footer(g, L, t);
   manny(g, t, assets, D);
-  endCard(g, t, assets, D, reel.data?.end || tpl.end);
-  // fade in from black at the very start
+  endCard(g, L, t, assets, D, reel.data?.end || tpl.end);
   const fin = 1 - prog(t, 0, 0.35);
-  if (fin > 0) { g.fillStyle = `rgba(7,20,23,${fin})`; g.fillRect(0, 0, W, H); }
+  if (fin > 0) { g.fillStyle = `rgba(255,243,224,${fin})`; g.fillRect(0, 0, W, H); }
   g.restore();
 }

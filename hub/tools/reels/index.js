@@ -3,7 +3,7 @@
 // it right here and hands it to the share sheet (Instagram, Photos…) or downloads it.
 // No music is added: pick a sound inside Instagram after uploading.
 import { h, clear, field, seg } from "../../js/ui.js";
-import { W, H, TEMPLATES, drawFrame, DISPLAY } from "./draw.js";
+import { W, H, TEMPLATES, LOOKS, drawFrame, DISPLAY } from "./draw.js";
 import { withDefaults, occurrences, businessDate, crewFor, keyOf } from "../../js/tv-shared.js";
 
 const add = (el, ...kids) => { el.append(...kids.flat(Infinity).filter((k) => k != null && k !== false)); return el; };
@@ -32,7 +32,7 @@ function pickFormat() {
 
 export function mount(el, ctx) {
   let tv = null;
-  const reel = { template: "drink", seconds: 10, data: {} };
+  const reel = { template: "drink", look: "cream", seconds: 10, data: {} };
   const assets = { logo: null, manny: null, photo: null };
   let photoUrl = "", photoSource = "";
   Promise.all([loadImg(LOGO), loadImg(MANNY)]).then(([l, m]) => { assets.logo = l; assets.manny = m; });
@@ -72,6 +72,9 @@ export function mount(el, ctx) {
       h("div", { class: "card form" },
         field("Template", h("div", { class: "rm-templates" }, Object.entries(TEMPLATES).map(([k, t]) => h("button", { type: "button", class: `rm-tpl${k === reel.template ? " on" : ""}`,
           onclick: () => { if (k === reel.template) return; reel.template = k; fillDefaults(); build(); restart(); } }, h("span", { class: "rm-tpl-icon" }, t.icon), t.name)))),
+        field("Background", h("div", { class: "rm-looks" }, Object.entries(LOOKS).map(([k, l]) => h("button", { type: "button", class: `rm-look${k === reel.look ? " on" : ""}`,
+          onclick: (e) => { reel.look = k; e.currentTarget.parentElement.querySelectorAll(".rm-look").forEach((b) => b.classList.toggle("on", b === e.currentTarget)); restart(); } },
+          h("span", { class: "rm-swatch", style: { background: l.swatch } }), l.name)))),
         field("Length", seg(LENGTHS.map((s) => ({ value: s, label: `${s} sec` })), reel.seconds, (v) => { reel.seconds = v; restart(); }))),
       pullBox,
       h("div", { class: "card form" },
