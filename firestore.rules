@@ -178,17 +178,27 @@ service cloud.firestore {
           && validQuest(request.resource.data);
         allow delete: if can(loc, 'quests', 2);
       }
-      // Board settings: how many quests show at once (0 = all).
+      // Board settings: how many quests show at once (0 = all), and auto-approve (sign-offs are
+      // approved the moment they're sent, e.g. while the owner is away).
       match /tools-data/quests/settings/{id} {
         allow read: if can(loc, 'quests', 1);
         allow write: if can(loc, 'quests', 2) && id == 'board'
-          && request.resource.data.keys().hasOnly(['maxShown', 'updatedAt', 'updatedBy'])
-          && request.resource.data.maxShown is int && request.resource.data.maxShown >= 0 && request.resource.data.maxShown <= 50
+          && request.resource.data.keys().hasOnly(['maxShown', 'autoApprove', 'updatedAt', 'updatedBy'])
+          && request.resource.data.get('maxShown', 0) is int && request.resource.data.get('maxShown', 0) >= 0 && request.resource.data.get('maxShown', 0) <= 50
+          && request.resource.data.get('autoApprove', false) is bool
           && request.resource.data.updatedAt == request.time && request.resource.data.updatedBy == me(loc).name;
       }
       match /tools-data/quests/subs/{id} {
         function questPath(qid) { return /databases/$(database)/documents/locations/$(loc)/tools-data/quests/items/$(qid); }
         function userPathOf(uid) { return /databases/$(database)/documents/locations/$(loc)/users/$(uid); }
+        function questSettingsPath() { return /databases/$(database)/documents/locations/$(loc)/tools-data/quests/settings/board; }
+        // A sign-off arrives either waiting for review, or already approved when auto-approve is on.
+        function validSignoffStatus(d) {
+          return (d.status == 'pending' && !d.keys().hasAny(['auto', 'reviewedBy', 'reviewedAt', 'reviewNote']))
+            || (d.status == 'approved' && d.get('auto', false) == true
+              && exists(questSettingsPath()) && get(questSettingsPath()).data.get('autoApprove', false) == true
+              && d.reviewedBy == 'Auto-approved' && d.reviewedAt == request.time && d.reviewNote == '');
+        }
         // Manage can also give (or take back) stars by hand: an already-approved record with a star count.
         function validManual(d) {
           return d.keys().hasOnly(['kind', 'questId', 'questTitle', 'uid', 'name', 'note', 'photo', 'at', 'status', 'stars', 'reviewedBy', 'reviewedAt', 'reviewNote'])
@@ -203,12 +213,12 @@ service cloud.firestore {
         // and quests set to unlock on a date can't be signed off before then.
         allow read: if can(loc, 'quests', 1);
         allow create: if (can(loc, 'quests', 2) && validManual(request.resource.data)) || (can(loc, 'quests', 1)
-          && request.resource.data.keys().hasOnly(['questId', 'questTitle', 'uid', 'name', 'note', 'photo', 'at', 'status', 'stars', 'round'])
+          && request.resource.data.keys().hasOnly(['questId', 'questTitle', 'uid', 'name', 'note', 'photo', 'at', 'status', 'stars', 'round', 'auto', 'reviewedBy', 'reviewedAt', 'reviewNote'])
           && request.resource.data.get('round', '') is string && request.resource.data.get('round', '').size() <= 10
           && request.resource.data.uid == request.auth.uid
           && request.resource.data.name == me(loc).name
           && request.resource.data.at == request.time
-          && request.resource.data.status == 'pending'
+          && validSignoffStatus(request.resource.data)
           && request.resource.data.questId is string && request.resource.data.questId.size() <= 60
           && request.resource.data.questTitle is string && request.resource.data.questTitle.size() <= 120
           && request.resource.data.note is string && request.resource.data.note.size() <= 500

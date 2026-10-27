@@ -740,3 +740,7 @@ button.cl-row:active { transform: scale(.99); }
 .mm-bw .mm-sec-title { text-decoration-color: #000; }
 .mm-bw .mm-badge { background: #fff; color: #000; border: .1em dashed #000; outline: .14em solid #000; }
 .mm-bw .mm-feat { background: #fff; color: #000; border: .1em solid #000; }
+/* Side Quests: auto-approve */
+.sq-auto.on { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold) inset; }
+.sq-auto-chip { margin-left: 10px; vertical-align: middle; }
+.sq-checks-bar { display: flex; justify-content: flex-end; margin: -4px 0 10px; }

@@ -246,7 +246,8 @@ export async function saveQuest(session, qid, { title, details, repeat, open, st
 export function watchQuestSettings(cb) {
   return F.onSnapshot(docRef(`${SQ}/settings/board`), (d) => cb(d.exists() ? d.data() : {}), (e) => { console.warn("[hub] quest settings", e); cb({}); });
 }
-export const saveQuestSettings = (session, { maxShown }) => F.setDoc(docRef(`${SQ}/settings/board`), { maxShown, updatedAt: F.serverTimestamp(), updatedBy: session.me.name });
+// Pass only what changes, e.g. { autoApprove: true }.
+export const saveQuestSettings = (session, changes) => F.setDoc(docRef(`${SQ}/settings/board`), { ...changes, updatedAt: F.serverTimestamp(), updatedBy: session.me.name }, { merge: true });
 export const setQuestOpen = (session, qid, open) => F.updateDoc(docRef(`${SQ}/items/${qid}`), { open, updatedAt: F.serverTimestamp(), updatedBy: session.me.name });
 export const deleteQuest = (qid) => F.deleteDoc(docRef(`${SQ}/items/${qid}`));
 export function watchQuestSubs(cb) {
@@ -255,9 +256,12 @@ export function watchQuestSubs(cb) {
     (e) => { console.warn("[hub] quest sign-offs", e); cb(null, e); });
 }
 // round: for a recurring quest, the date it opened that this sign-off counts for.
-export const submitQuest = (session, quest, { note, photo, round = "" }) => F.addDoc(col(`${SQ}/subs`), {
-  ...(round ? { round } : {}), questId: quest.id, questTitle: quest.title, uid: session.uid, name: session.me.name,
-  note: note || "", photo: photo || "", at: F.serverTimestamp(), status: "pending", stars: quest.stars || 1,
+// auto: auto-approve is on, so it goes straight in as approved.
+export const submitQuest = (session, quest, { note, photo, round = "", auto = false }) => F.addDoc(col(`${SQ}/subs`), {
+  ...(round ? { round } : {}),
+  ...(auto ? { auto: true, reviewedBy: "Auto-approved", reviewedAt: F.serverTimestamp(), reviewNote: "" } : {}),
+  questId: quest.id, questTitle: quest.title, uid: session.uid, name: session.me.name,
+  note: note || "", photo: photo || "", at: F.serverTimestamp(), status: auto ? "approved" : "pending", stars: quest.stars || 1,
 });
 // Approve or send back. Approving a one-time quest also takes it off the board.
 export async function reviewQuestSub(session, sub, { status, reviewNote, closeQuest }) {

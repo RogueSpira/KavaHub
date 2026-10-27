@@ -20,6 +20,7 @@ export function mount(el, ctx) {
   const manage = ctx.level >= 2;
   const view = ctx.sub[0] || "board";
   let quests = null, subs = null, failed = false, people = null, period = "month", settings = {};
+  const tidied = new Set(); // one-time quests already closed after an auto-approval
   const pane = h("section", { class: "pane" });
   const nav = h("nav", { class: "tabs", role: "tablist" });
   add(el, nav, pane);
@@ -27,7 +28,7 @@ export function mount(el, ctx) {
   const views = { board, leaders: board, mine, review: manage ? review : null, stars: manage ? starsView : null, edit: manage ? editor : null };
   const paintView = (views[view] || board)();
   function paintNav() {
-    const pending = (subs || []).filter((s) => s.status === "pending").length;
+    const pending = (subs || []).filter((s) => s.status === "pending" || toCheck(s)).length;
     const tabs = [["board", "Quests & Leaderboard"], ["mine", "My stars"]];
     if (manage) tabs.push(["review", pending ? `Review (${pending})` : "Review"], ["stars", "Stars"], ["edit", "Edit quests"]);
     clear(nav);
@@ -35,7 +36,7 @@ export function mount(el, ctx) {
       class: `tab${view === id || (id === "board" && view === "leaders") ? " on" : ""}${id === "review" && pending ? " sq-tab-alert" : ""}`,
       onclick: () => ctx.navigate(id === "board" ? ctx.base : `${ctx.base}/${id}`) }, label));
   }
-  const repaint = () => { paintNav(); paintView(); };
+  const repaint = () => { paintNav(); paintView(); if (manage) tidyAutoApproved(); };
   repaint();
   const stops = [
     ctx.api.watchQuests((list, err) => { if (err) failed = true; quests = list || []; repaint(); }),
@@ -57,12 +58,40 @@ export function mount(el, ctx) {
   function unlockLabel(q) { return dateOfKey(q.unlockOn).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" }); }
   function myUid() { return ctx.session()?.uid; }
   function myName() { return ctx.session()?.me?.name; }
+  // Auto-approve: sign-offs go straight in as approved while it's on. Each one is flagged so a
+  // manager can look it over later ("to check") and send it back if it wasn't done right.
+  function autoOn() { return !!settings.autoApprove; }
+  function toCheck(s) { return s.auto && s.status === "approved" && s.reviewedBy === "Auto-approved"; }
+  // A one-time quest that was auto-approved is finished (staff can't close quests themselves).
+  // (Only sign-offs since the quest was last edited count, so a manager can reopen a finished quest.)
+  function finishedOnce(q) { return !q.repeat && subs.some((s) => s.questId === q.id && s.status === "approved" && (!q.updatedAt || !s.at || s.at > q.updatedAt)); }
+  // When a manager opens Side Quests, close those for real so they're off the board for good.
+  function tidyAutoApproved() {
+    if (!quests || !subs) return;
+    for (const q of quests) if (q.open && finishedOnce(q) && !tidied.has(q.id)) {
+      tidied.add(q.id);
+      ctx.api.setQuestOpen(ctx.session(), q.id, false).catch(() => tidied.delete(q.id));
+    }
+  }
+  async function setAuto(on) {
+    try {
+      await ctx.api.saveQuestSettings(ctx.session(), { autoApprove: on });
+      ctx.log(on ? "Turned on side quest auto-approve" : "Turned off side quest auto-approve", "");
+      ctx.toast(on ? "Auto-approve is on" : "Auto-approve is off");
+    } catch (e) { ctx.toast(e.message, "err"); }
+  }
+  function autoControl() {
+    return h("div", { class: `card sq-auto${autoOn() ? " on" : ""}` },
+      field("Auto-approve sign-offs", seg([{ value: false, label: "Off" }, { value: true, label: "On" }], autoOn(), setAuto),
+        autoOn() ? "On: every sign-off is approved right away and earns its stars. They're listed under Review so you can check them later and send back any that weren't done right."
+          : "Turn on while you're away. Sign-offs get approved right away instead of waiting for you."));
+  }
 
   /* =========================== BOARD =========================== */
   function board() {
     return () => {
       if (notReady()) return;
-      const open = quests.filter((q) => q.open);
+      const open = quests.filter((q) => q.open && !finishedOnce(q));
       const unlocked = open.filter((q) => !isLocked(q));
       const available = unlocked.filter((q) => !doneThisRound(q)), resting = unlocked.filter(doneThisRound);
       // Only show a few at a time (set in Edit quests), oldest first, so nobody cherry-picks. One
@@ -73,7 +102,7 @@ export function mount(el, ctx) {
       const locked = open.filter(isLocked).sort((a, b) => a.unlockOn.localeCompare(b.unlockOn));
       add(clear(pane), h("div", { class: "sq-split" },
         h("div", { class: "sq-col-quests" },
-          h("h3", { class: "sq-h" }, "🗺️ Side Quests"),
+          h("h3", { class: "sq-h" }, "🗺️ Side Quests", manage && autoOn() ? h("span", { class: "chip chip-soon sq-auto-chip" }, "Auto-approve on") : null),
           ready.length ? h("div", { class: "sq-list" }, ready.map(questCard),
               hidden ? h("p", { class: "muted small sq-more" }, `More quests unlock as these get done${manage ? ` (${hidden} waiting · only managers see this count)` : ""}.`) : null)
             : h("div", { class: "card empty-card" }, h("p", {}, "No side quests right now."), manage ? h("button", { class: "btn primary", type: "button", onclick: () => ctx.navigate(`${ctx.base}/edit`) }, "Add quests") : null),
@@ -141,14 +170,17 @@ export function mount(el, ctx) {
     paintPic();
     await modal({ title: q.title, body: h("div", { class: "form" },
       q.details ? h("p", { class: "muted" }, q.details) : null,
-      field("Photo", pic, `Show it off. A manager will check it before you get your ${worth(q.stars) > 1 ? `${worth(q.stars)} stars` : "star"}.`), field("Note", note)),
+      field("Photo", pic, autoOn() ? `Show it off. You get your ${worth(q.stars) > 1 ? `${worth(q.stars)} stars` : "star"} right away.`
+        : `Show it off. A manager will check it before you get your ${worth(q.stars) > 1 ? `${worth(q.stars)} stars` : "star"}.`), field("Note", note)),
     actions: [{ label: "Cancel", kind: "ghost", value: false }, { label: "Sign off", kind: "primary", onClick: async () => {
       if (uploading) throw new Error("Wait for the photo to finish uploading.");
       // Recurring: check nobody beat them to it while the form was open.
       const round = isRecurring(q) ? roundOf(q, today()) : "";
       if (round && roundSubs(q).some((s) => s.status !== "rejected" && s.uid !== myUid())) throw new Error("Someone already signed this one off. It opens again soon.");
-      await ctx.api.submitQuest(ctx.session(), q, { note: note.value.trim(), photo, round });
-      ctx.log("Signed off side quest", q.title); ctx.toast("Sent for approval ⭐");
+      const auto = autoOn();
+      await ctx.api.submitQuest(ctx.session(), q, { note: note.value.trim(), photo, round, auto });
+      ctx.log(auto ? "Signed off side quest (auto-approved)" : "Signed off side quest", q.title);
+      ctx.toast(auto ? `Approved! ${"★".repeat(Math.min(worth(q.stars), 5))}` : "Sent for approval ⭐");
       return true;
     } }] });
   }
@@ -306,8 +338,25 @@ export function mount(el, ctx) {
     return () => {
       if (notReady()) return;
       const pending = subs.filter((s) => s.status === "pending").sort((a, b) => a.at - b.at);
-      const recent = subs.filter((s) => s.status !== "pending" && s.reviewedAt).sort((a, b) => b.reviewedAt - a.reviewedAt).slice(0, 10);
+      const checks = subs.filter(toCheck).sort((a, b) => a.at - b.at);
+      const recent = subs.filter((s) => s.status !== "pending" && s.reviewedAt && !toCheck(s)).sort((a, b) => b.reviewedAt - a.reviewedAt).slice(0, 10);
       add(clear(pane),
+        autoControl(),
+        checks.length ? [h("h3", { class: "tv-h3" }, `✅ Auto-approved: check when you can (${checks.length})`),
+          h("div", { class: "sq-checks-bar" }, h("button", { class: "btn small", type: "button", onclick: () => allGood(checks) }, `👍 All ${checks.length} look good`)),
+          h("div", { class: "sq-list" }, checks.map((s) => {
+            const q = quests.find((x) => x.id === s.questId);
+            return h("article", { class: "card sq-review" },
+              s.photo ? h("img", { class: "sq-review-img", src: s.photo, alt: "", onclick: () => bigPhoto(s) }) : h("div", { class: "sq-review-img none" }, "No photo"),
+              h("div", { class: "sq-quest-main" },
+                h("div", { class: "sq-quest-title" }, s.questTitle, worthChip(s.stars)),
+                h("span", { class: "muted small" }, `${s.name} · ${timeAgo(s.at)}${s.round ? ` · for ${dateOfKey(s.round).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}` : ""}`),
+                s.note ? h("p", { class: "sugg-quote" }, s.note) : null,
+                h("div", { class: "sq-actions" },
+                  h("button", { class: "btn primary", type: "button", onclick: () => decide(s, q, "approved", true) }, "👍 Looks good"),
+                  h("button", { class: "btn ghost", type: "button", onclick: () => decide(s, q, "rejected") }, "Not yet (takes the stars back)"))));
+          })),
+          h("h3", { class: "tv-h3" }, "Waiting for review")] : null,
         pending.length ? h("div", { class: "sq-list" }, pending.map((s) => {
           const q = quests.find((x) => x.id === s.questId);
           return h("article", { class: "card sq-review" },
@@ -319,7 +368,7 @@ export function mount(el, ctx) {
               h("div", { class: "sq-actions" },
                 h("button", { class: "btn primary", type: "button", onclick: () => decide(s, q, "approved") }, "★ Approve"),
                 h("button", { class: "btn ghost", type: "button", onclick: () => decide(s, q, "rejected") }, "Not yet"))));
-        })) : h("div", { class: "card empty-card" }, h("p", {}, "Nothing waiting for review. 🎉")),
+        })) : h("div", { class: "card empty-card" }, h("p", {}, autoOn() ? "Nothing waiting. Auto-approve is on, so new sign-offs show up in the list above." : "Nothing waiting for review. 🎉")),
         recent.length ? h("details", { class: "sq-recent" }, h("summary", {}, "Recently reviewed & stars given (change or undo)"), h("div", { class: "rows" }, recent.map((s) => h("div", { class: "row" },
           h("span", { class: "row-main" }, h("span", { class: "row-title" }, `${s.name} — ${s.kind === "manual" ? `🎁 ${s.questTitle}` : s.questTitle}`),
             h("span", { class: "row-sub" }, `${s.kind === "manual" ? "Given" : s.status === "approved" ? "Approved" : "Sent back"} by ${s.reviewedBy} · ${timeAgo(s.reviewedAt)}`)),
@@ -333,7 +382,13 @@ export function mount(el, ctx) {
               s.status === "approved" ? "Change to Not yet" : "Change to Approved"))))) : null);
     };
   }
-  async function decide(s, q, status) {
+  async function allGood(list) {
+    try {
+      for (const s of list) await ctx.api.reviewQuestSub(ctx.session(), s, { status: "approved", reviewNote: "", closeQuest: false });
+      ctx.log("Checked auto-approved side quests", `${list.length}`); ctx.toast("All checked 👍");
+    } catch (e) { ctx.toast(e.message || "Couldn't save.", "err"); }
+  }
+  async function decide(s, q, status, checked = false) {
     let reviewNote = "";
     if (status === "rejected") {
       const why = h("textarea", { class: "input textarea", rows: "3", maxlength: "300", placeholder: "What still needs doing? (optional — they'll see this)" });
@@ -345,8 +400,13 @@ export function mount(el, ctx) {
     try {
       // Approving a one-time quest takes it off the board.
       await ctx.api.reviewQuestSub(ctx.session(), s, { status, reviewNote, closeQuest: status === "approved" && q && !q.repeat && q.open });
-      ctx.log(status === "approved" ? "Approved side quest" : "Sent back side quest", `${s.name}: ${s.questTitle}`);
-      ctx.toast(status === "approved" ? `${"★".repeat(Math.min(worth(s.stars), 5))} for ${s.name}!` : `Sent back to ${s.name}`);
+      // Sending back a one-time quest that's already off the board puts it back up (unless someone else finished it).
+      if (status === "rejected" && q && !q.repeat && !q.open && !subs.some((x) => x.id !== s.id && x.questId === q.id && x.status === "approved")) {
+        tidied.add(q.id);
+        await ctx.api.setQuestOpen(ctx.session(), q.id, true);
+      }
+      ctx.log(status === "approved" ? (checked ? "Checked auto-approved side quest" : "Approved side quest") : "Sent back side quest", `${s.name}: ${s.questTitle}`);
+      ctx.toast(status === "approved" ? (checked ? "Checked 👍" : `${"★".repeat(Math.min(worth(s.stars), 5))} for ${s.name}!`) : `Sent back to ${s.name}`);
     } catch (e) { ctx.toast(e.message || "Couldn't save.", "err"); }
   }
   function bigPhoto(s) {
@@ -361,6 +421,7 @@ export function mount(el, ctx) {
       add(clear(pane),
         h("div", { class: "pane-head" }, h("p", { class: "muted" }, "One-time quests come off the board once approved. Recurring ones reopen on their schedule. Anytime ones stay up."),
           h("button", { class: "btn primary", type: "button", onclick: () => editQuest(null) }, "+ New quest")),
+        autoControl(),
         h("div", { class: "card sq-limit" },
           field("Quests on the board at a time", h("select", { class: "input", onchange: async (e) => {
             const maxShown = Number(e.target.value);

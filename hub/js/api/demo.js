@@ -388,19 +388,20 @@ export async function saveQuest(session, qid, { title, details, repeat, open, st
   const x = { id: id("q"), ...data, createdAt: now(), createdBy: meName() };
   quests.unshift(x); changed(); return x.id;
 }
-let questSettings = { maxShown: 0 };
+let questSettings = { maxShown: 0, autoApprove: false };
 export function watchQuestSettings(cb) { return watch(() => cb(structuredClone(questSettings))); }
-export async function saveQuestSettings(session, { maxShown }) { await wait(80); needQuest(2); questSettings = { maxShown }; changed(); }
+export async function saveQuestSettings(session, changes) { await wait(80); needQuest(2); questSettings = { ...questSettings, ...changes }; changed(); }
 export async function setQuestOpen(session, qid, open) { await wait(80); needQuest(2); Object.assign(quests.find((x) => x.id === qid), { open, updatedAt: now() }); changed(); }
 export async function deleteQuest(qid) { await wait(80); needQuest(2); const i = quests.findIndex((x) => x.id === qid); if (i >= 0) quests.splice(i, 1); changed(); }
 export function watchQuestSubs(cb) { return watch(() => cb(structuredClone(qsubs).sort((a, b) => b.at - a.at))); }
-export async function submitQuest(session, quest, { note, photo, round = "" }) {
+export async function submitQuest(session, quest, { note, photo, round = "", auto = false }) {
   await wait(150); needQuest(1);
   const qq = quests.find((x) => x.id === quest.id);
   if (!qq?.open) throw new Error("That quest is closed.");
   if (qq.unlockAt && qq.unlockAt > now()) throw new Error("Missing or insufficient permissions.");
   if (round && qsubs.some((s) => s.questId === quest.id && s.round === round && s.status !== "rejected")) throw new Error("Someone already did this one. It opens again soon.");
-  qsubs.unshift({ id: id("qs"), ...(round ? { round } : {}), questId: quest.id, questTitle: quest.title, uid: session.uid, name: session.me.name, note: note || "", photo: photo || "", at: now(), status: "pending", stars: qq.stars || 1 });
+  qsubs.unshift({ id: id("qs"), ...(round ? { round } : {}), questId: quest.id, questTitle: quest.title, uid: session.uid, name: session.me.name, note: note || "", photo: photo || "", at: now(), stars: qq.stars || 1,
+    ...(auto && questSettings.autoApprove ? { status: "approved", auto: true, reviewedBy: "Auto-approved", reviewedAt: now(), reviewNote: "" } : { status: "pending" }) });
   changed();
 }
 export async function reviewQuestSub(session, sub, { status, reviewNote, closeQuest }) {
