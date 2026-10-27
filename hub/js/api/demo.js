@@ -14,13 +14,13 @@ const id = (p) => `${p}-${(seq++).toString(36)}`;
 
 const ROLES = {
   owner: { id: "owner", name: "Owner", rank: 100, system: true, perms: {} },
-  manager: { id: "manager", name: "Manager", rank: 50, system: false, perms: { tv: 2, checklists: 2, knowledge: 2, suggestions: 2, quests: 2, menus: 2, admin: 0 } },
-  kavatender: { id: "kavatender", name: "Kavatender", rank: 10, system: false, perms: { tv: 1, checklists: 1, knowledge: 1, suggestions: 1, quests: 1, menus: 1, admin: 0 } },
+  manager: { id: "manager", name: "Manager", rank: 50, system: false, perms: { tv: 2, checklists: 2, knowledge: 2, suggestions: 2, quests: 2, menus: 2, reels: 2, admin: 0 } },
+  kavatender: { id: "kavatender", name: "Kavatender", rank: 10, system: false, perms: { tv: 1, checklists: 1, knowledge: 1, suggestions: 1, quests: 1, menus: 1, reels: 1, admin: 0 } },
 };
 const store = {
   location: fresh ? null : { id: LOCATION_ID, name: "Kava & Co. Mandarin", setupDone: true, settings: { autoLockSeconds: 120 } },
   roles: fresh ? {} : structuredClone(ROLES),
-  tools: fresh ? {} : Object.fromEntries(["tv", "checklists", "quests", "menus", "knowledge", "suggestions", "admin"].map((t, i) => [t, { enabled: true, order: i }])),
+  tools: fresh ? {} : Object.fromEntries(["tv", "checklists", "quests", "menus", "reels", "knowledge", "suggestions", "admin"].map((t, i) => [t, { enabled: true, order: i }])),
   users: {},
   pins: {}, // pin -> uid  (demo only; the real backend never stores PINs)
   activity: [],
@@ -32,6 +32,16 @@ function addUser(name, roleId, pin) {
   return uid;
 }
 if (!fresh) {
+  // Sample folders and link tiles (Admin → Tiles).
+  Object.assign(store.tools, {
+    "folder-makers": { kind: "folder", name: "Maker Tools", icon: "🎨", order: 4 },
+    "folder-events": { kind: "folder", name: "Event Tools", icon: "🎉", order: 5 },
+    "link-scores": { kind: "link", name: "Trivia Scores", icon: "🏆", blurb: "Score tracker & Jeopardy board", url: "https://kavatriviascores.netlify.app", roles: ["manager"], enabled: true, order: 0, folder: "folder-events" },
+    "link-vote": { kind: "link", name: "KavaVote", icon: "🗳️", blurb: "Live voting", url: "https://kavavote.netlify.app", roles: [], enabled: true, order: 1, folder: "folder-events" },
+    "link-karaoke": { kind: "link", name: "Karaoke Queue", icon: "🎤", blurb: "Karaoke night sign-ups", url: "https://kavakaraoke.netlify.app", roles: [], enabled: true, order: 2, folder: "folder-events" },
+  });
+  store.tools.menus = { ...store.tools.menus, folder: "folder-makers", order: 0 };
+  store.tools.reels = { ...store.tools.reels, folder: "folder-makers", order: 1 };
   addUser("Rogue", "owner", "2580");
   addUser("Josh", "manager", "3690");
   addUser("Daniel", "kavatender", "1357");
@@ -81,7 +91,7 @@ export async function setupOwner({ setupCode, name, pin }) {
   checkPin(pin);
   store.location = { id: LOCATION_ID, name: "Kava & Co. Mandarin", setupDone: true, settings: { autoLockSeconds: 120 } };
   store.roles = structuredClone(ROLES);
-  store.tools = Object.fromEntries(["tv", "checklists", "quests", "menus", "knowledge", "suggestions", "admin"].map((t, i) => [t, { enabled: true, order: i }]));
+  store.tools = Object.fromEntries(["tv", "checklists", "quests", "menus", "reels", "knowledge", "suggestions", "admin"].map((t, i) => [t, { enabled: true, order: i }]));
   currentUid = addUser(cleanName(name), "owner", pin);
   addActivity("admin", "Set up location", `Owner: ${name}`);
 }
@@ -188,7 +198,8 @@ export async function deleteRole(roleId) {
 }
 
 /* ---------- tiles & settings ---------- */
-export async function saveTool(toolId, cfg) { await wait(80); requireAdmin(); store.tools[toolId] = { enabled: !!cfg.enabled, order: cfg.order | 0 }; changed(); }
+export async function saveTool(toolId, cfg) { await wait(80); requireAdmin(); store.tools[toolId] = { ...(store.tools[toolId] || {}), ...structuredClone(cfg) }; changed(); }
+export async function deleteTile(tid) { await wait(80); requireAdmin(); delete store.tools[tid]; changed(); }
 export async function saveSettings(settings) { await wait(80); if (me()?.roleId !== "owner") throw new Error("Only an Owner can change settings."); store.location.settings = settings; changed(); }
 
 /* ---------- activity ---------- */

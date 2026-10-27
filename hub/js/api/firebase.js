@@ -93,7 +93,10 @@ export const createRole = (name, rank) => call("adminCreateRole", { name, rank }
 export const deleteRole = (roleId) => call("adminDeleteRole", { roleId });
 
 /* ---------- tiles & settings ---------- */
-export const saveTool = (toolId, cfg) => F.setDoc(docRef(`tools/${toolId}`), { enabled: !!cfg.enabled, order: cfg.order | 0 });
+// Tile settings: built-in tools { enabled, order, folder }, plus folder-… and link-… tiles (see js/layout.js).
+// Saves only the fields passed in, so moving a tile doesn't wipe its other settings.
+export const saveTool = (toolId, cfg) => F.setDoc(docRef(`tools/${toolId}`), cfg, { merge: true });
+export const deleteTile = (id) => F.deleteDoc(docRef(`tools/${id}`));
 export const saveSettings = (settings) => F.updateDoc(docRef(""), { settings });
 
 /* ---------- activity ---------- */

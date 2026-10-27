@@ -3,6 +3,7 @@ import api from "./api/index.js";
 import { h, clear, toast } from "./ui.js";
 import { TOOLS } from "../tools/registry.js";
 import { levelFor } from "./perms.js";
+import { homeLayout, folderOf, FOLDER_ACCENT } from "./layout.js";
 import { DEMO_MODE, PIN_LENGTH, LOCATION_ID } from "./config.js";
 
 const root = document.getElementById("app");
@@ -23,6 +24,7 @@ export function visibleTools(s = session) {
 function parseRoute() {
   const parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
   if (parts[0] === "tool" && parts[1]) return { toolId: parts[1], sub: parts.slice(2) };
+  if (parts[0] === "folder" && parts[1]) return { folderId: parts[1], toolId: null, sub: [] };
   return { toolId: null, sub: [] };
 }
 export const navigate = (path) => { location.hash = path; };
@@ -43,8 +45,10 @@ function render(force = false) {
     const r = parseRoute();
     const entry = r.toolId && visibleTools().find((x) => x.t.id === r.toolId);
     if (r.toolId && !entry) { navigate("#/"); return; }
-    key = entry ? `tool:${entry.t.id}:${entry.level}:${r.sub.join("/")}` : `home:${homeSignature()}`;
-    build = entry ? () => toolScreen(entry, r.sub) : homeScreen;
+    const folder = r.folderId && homeLayout(session).folders[r.folderId];
+    if (r.folderId && !folder?.items.length) { navigate("#/"); return; }
+    key = entry ? `tool:${entry.t.id}:${entry.level}:${r.sub.join("/")}` : `home:${r.folderId || ""}:${homeSignature()}`;
+    build = entry ? () => toolScreen(entry, r.sub) : () => homeScreen(r.folderId);
   }
   if (!force && key === current.key) { refreshChrome(); return; }
   unmount();
@@ -55,7 +59,11 @@ function render(force = false) {
 }
 
 // Re-render home only when what it shows changes.
-const homeSignature = () => JSON.stringify([session.me.name, session.role?.name, visibleTools().map((x) => x.t.id)]);
+const homeSignature = () => {
+  const L = homeLayout(session);
+  const sig = (x) => [x.id, x.d?.name, x.d?.icon, x.d?.blurb, x.d?.url, x.count];
+  return JSON.stringify([session.me.name, session.role?.name, L.home.map(sig), Object.values(L.folders).map((f) => [f.id, f.items.map(sig)])]);
+};
 
 /* ================= shared chrome ================= */
 function demoBanner() {
@@ -64,10 +72,10 @@ function demoBanner() {
     h("b", {}, "Demo mode"), " — sample data, nothing is saved. PINs: Rogue 2580 · Josh 3690 · Daniel 1357 · Wheatyn 2468");
 }
 
-function topbar({ back } = {}) {
+function topbar({ back, backTo = "#/", backLabel = "Home" } = {}) {
   return h("header", { class: "topbar" },
     h("div", { class: "topbar-left" },
-      back ? h("button", { class: "btn ghost back-btn", type: "button", onclick: () => navigate("#/") }, "← Home") : null,
+      back ? h("button", { class: "btn ghost back-btn", type: "button", onclick: () => navigate(backTo) }, `← ${backLabel}`) : null,
       h("img", { class: "topbar-logo", src: "icons/logo.png", alt: "Kava & Co. Mandarin" })),
     h("div", { class: "topbar-right" },
       h("div", { class: "who" },
@@ -163,28 +171,53 @@ function setupScreen() {
   function lbl(t, i) { return h("label", { class: "field" }, h("span", { class: "field-label" }, t), i); }
 }
 
-/* ================= home ================= */
-function homeScreen() {
-  const list = visibleTools();
+/* ================= home (and folders) ================= */
+function tileFor(x) {
+  if (x.kind === "folder") {
+    return h("button", { class: `tile tile-folder accent-${FOLDER_ACCENT}`, type: "button", onclick: () => navigate(`#/folder/${x.id}`) },
+      h("span", { class: "tile-icon", "aria-hidden": "true" }, x.d.icon || "📁"),
+      h("span", { class: "tile-name" }, x.d.name || "Folder"),
+      h("span", { class: "tile-blurb" }, `${x.count} tool${x.count === 1 ? "" : "s"}`),
+      h("span", { class: "chip tile-chip" }, "Folder"));
+  }
+  if (x.kind === "link") {
+    return h("a", { class: "tile accent-aqua", href: x.d.url, target: "_blank", rel: "noopener" },
+      h("span", { class: "tile-icon", "aria-hidden": "true" }, x.d.icon || "🔗"),
+      h("span", { class: "tile-name" }, x.d.name),
+      x.d.blurb ? h("span", { class: "tile-blurb" }, x.d.blurb) : null,
+      h("span", { class: "chip tile-chip", title: "Opens in a new tab" }, "↗"));
+  }
+  const { t, level } = x;
+  return h("button", { class: `tile accent-${t.accent}`, type: "button", onclick: () => navigate(`#/tool/${t.id}`) },
+    h("span", { class: "tile-icon", "aria-hidden": "true" }, t.icon),
+    h("span", { class: "tile-name" }, t.name),
+    h("span", { class: "tile-blurb" }, t.blurb),
+    t.status === "soon" ? h("span", { class: "chip chip-soon tile-chip" }, "Soon")
+      : level >= 2 && t.id !== "admin" ? h("span", { class: "chip tile-chip" }, "Manage") : null);
+}
+function homeScreen(folderId) {
+  const L = homeLayout(session);
+  if (folderId) {
+    const f = L.folders[folderId];
+    root.append(demoBanner() || "", topbar({ back: true }),
+      h("main", { class: "home" },
+        h("div", { class: "tool-head" }, h("span", { class: `tool-icon accent-${FOLDER_ACCENT}` }, f.d.icon || "📁"), h("h1", {}, f.d.name || "Folder")),
+        h("div", { class: "tiles" }, f.items.map(tileFor))));
+    return;
+  }
   const hour = new Date().getHours();
   const hello = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
-  const grid = h("div", { class: "tiles" }, list.map(({ t, level }) =>
-    h("button", { class: `tile accent-${t.accent}`, type: "button", onclick: () => navigate(`#/tool/${t.id}`) },
-      h("span", { class: "tile-icon", "aria-hidden": "true" }, t.icon),
-      h("span", { class: "tile-name" }, t.name),
-      h("span", { class: "tile-blurb" }, t.blurb),
-      t.status === "soon" ? h("span", { class: "chip chip-soon tile-chip" }, "Soon")
-        : level >= 2 && t.id !== "admin" ? h("span", { class: "chip tile-chip" }, "Manage") : null)));
   root.append(demoBanner() || "", topbar(),
     h("main", { class: "home" },
       h("h1", { class: "hello" }, `${hello}, `, h("em", {}, session.me.name), "."),
-      list.length ? grid : h("p", { class: "muted" }, "Nothing is set up for your role yet. Ask Rogue to give you access.")));
+      L.home.length ? h("div", { class: "tiles" }, L.home.map(tileFor)) : h("p", { class: "muted" }, "Nothing is set up for your role yet. Ask Rogue to give you access.")));
 }
 
 /* ================= a tool ================= */
 function toolScreen({ t, level }, sub) {
   const body = h("div", { class: "tool-body" }, h("div", { class: "loading" }, "Loading…"));
-  root.append(demoBanner() || "", topbar({ back: true }),
+  const inFolder = folderOf(session, t.id);
+  root.append(demoBanner() || "", topbar({ back: true, backTo: inFolder ? `#/folder/${inFolder}` : "#/", backLabel: inFolder ? (session.tools[inFolder].name || "Back") : "Home" }),
     h("main", { class: "tool" },
       h("div", { class: "tool-head" }, h("span", { class: `tool-icon accent-${t.accent}` }, t.icon), h("h1", {}, t.name)),
       body));

@@ -56,14 +56,39 @@ service cloud.firestore {
         allow create, delete: if false;
       }
 
-      // Tile settings (on/off + order).
+      // Home screen tiles. Built-in tools: on/off, order and which folder they sit in.
+      // folder-<id>: a group of tiles. link-<id>: a tile that opens another site (https only),
+      // shown to the roles listed (empty list = everyone).
       match /tools/{toolId} {
+        function validTool(d) {
+          return d.keys().hasOnly(['enabled', 'order', 'folder'])
+            && d.get('enabled', true) is bool && d.get('order', 0) is int
+            && d.get('folder', '') is string && d.get('folder', '').size() <= 40;
+        }
+        function validFolder(d) {
+          return d.keys().hasOnly(['kind', 'name', 'icon', 'order'])
+            && d.kind == 'folder'
+            && d.name is string && d.name.size() > 0 && d.name.size() <= 30
+            && d.get('icon', '') is string && d.get('icon', '').size() <= 8
+            && d.get('order', 0) is int;
+        }
+        function validLink(d) {
+          return d.keys().hasOnly(['kind', 'name', 'icon', 'blurb', 'url', 'roles', 'enabled', 'order', 'folder'])
+            && d.kind == 'link'
+            && d.name is string && d.name.size() > 0 && d.name.size() <= 40
+            && d.get('icon', '') is string && d.get('icon', '').size() <= 8
+            && d.get('blurb', '') is string && d.get('blurb', '').size() <= 80
+            && d.url is string && d.url.size() <= 300 && d.url.matches('^https://[^ ]+$')
+            && d.get('roles', []) is list && d.get('roles', []).size() <= 20
+            && d.get('enabled', true) is bool && d.get('order', 0) is int
+            && d.get('folder', '') is string && d.get('folder', '').size() <= 40;
+        }
         allow read: if member(loc);
         allow create, update: if can(loc, 'admin', 2)
-          && request.resource.data.keys().hasOnly(['enabled', 'order'])
-          && request.resource.data.enabled is bool
-          && request.resource.data.order is int;
-        allow delete: if false;
+          && (toolId.matches('^folder-[a-z0-9]{3,24}$') ? validFolder(request.resource.data)
+            : toolId.matches('^link-[a-z0-9]{3,24}$') ? validLink(request.resource.data)
+            : validTool(request.resource.data));
+        allow delete: if can(loc, 'admin', 2) && toolId.matches('^(folder|link)-[a-z0-9]{3,24}$');
       }
 
       // Activity log: anyone signed in can add an entry as themselves; only admins read it.

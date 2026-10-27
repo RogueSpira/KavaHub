@@ -120,6 +120,7 @@ a.btn { text-decoration: none; color: inherit; }
   display: flex; flex-direction: column; gap: 6px; transition: transform .1s ease, box-shadow .2s ease;
   box-shadow: 0 10px 28px rgba(0, 0, 0, .35);
 }
+a.tile { text-decoration: none; color: inherit; }
 .tile:active { transform: scale(.97); }
 @media (hover: hover) { .tile:hover { box-shadow: 0 0 28px color-mix(in srgb, var(--acc) 35%, transparent), 0 10px 28px rgba(0, 0, 0, .35); } }
 .tile-icon { font-size: 44px; line-height: 1; margin-bottom: 10px; filter: drop-shadow(0 0 10px color-mix(in srgb, var(--acc) 60%, transparent)); }
@@ -691,3 +692,20 @@ button.cl-row:active { transform: scale(.99); }
 }
 .mm-light .mm-sec { box-shadow: 0 .25em 0 var(--orange); }
 .mm-light .mm-event { box-shadow: 0 .2em 0 var(--ink); }
+
+/* ---------- Admin → Tiles ---------- */
+.tiles-move { width: auto; min-height: 40px; padding: 0 10px; font-size: 14.5px; max-width: 170px; }
+.tiles-name-row { display: grid; grid-template-columns: 110px 1fr; gap: 12px; align-items: start; }
+@media (max-width: 700px) { .row.static { flex-wrap: wrap; } .row.static .row-actions { width: 100%; justify-content: flex-start; } }
+
+/* ---------- Reel Maker ---------- */
+.rm-stage { background: #3a4a4e; border-radius: var(--r); padding: 14px; display: grid; place-items: center; }
+.rm-canvas { width: 100%; max-width: 380px; aspect-ratio: 9 / 16; height: auto; border-radius: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, .45); background: #071417; }
+.rm-templates { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.rm-tpl { display: flex; align-items: center; gap: 8px; min-height: 52px; padding: 8px 12px; border-radius: var(--r-sm); border: 1.5px solid var(--line); background: transparent;
+  font-family: var(--f-label); font-weight: 600; font-size: 15px; text-align: left; }
+.rm-tpl.on { border-color: var(--orange); background: color-mix(in srgb, var(--orange) 16%, transparent); color: var(--cream); }
+.rm-tpl-icon { font-size: 22px; }
+.rm-result { display: grid; gap: 10px; justify-items: center; }
+.rm-video { width: 100%; max-width: 280px; border-radius: 12px; background: #000; }
+@media (max-width: 900px) { .mm-tool[data-pane="edit"] .mm-preview { display: none; } }

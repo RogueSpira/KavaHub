@@ -152,6 +152,14 @@ cocktails) or a blank one, type the drinks, descriptions and prices, and hit Pri
 Kava & Co. look on a full page, or two half-pages per sheet with a cut line. Text sizes itself to fill
 one page. Menus are saved so they can be reused or copied.
 
+## Reel Maker
+
+Short vertical videos (1080×1920) for Instagram Reels and Stories: Drink spotlight, Event promo,
+Tonight's specials and Meet your kavatender. Fill it in (or pull from TV Screens), watch the preview,
+then **Make video** records it once in real time and offers Share (Instagram, Photos…) or Download.
+Use Safari on the iPad or iPhone for the best result: it records H.264 MP4, which Instagram takes.
+Nothing is stored. Add music inside Instagram.
+
 ## Side Quests
 
 Extra jobs outside the daily lists. Kavatenders tap **I did it** (with an optional photo and note);
