@@ -6,9 +6,12 @@
 //   #/tool/quests/edit       Manage: add, change, close quests
 // Each approved sign-off earns the quest's stars (1 unless set higher). Every 5 blue stars become 1 green star.
 // A quest can be set to unlock on a date; until then it shows as "Coming up" and can't be signed off.
+// Quest types: one time (off the board once approved) · recurring (reopens on a schedule, one person
+// per opening; see schedule.js) · anytime (always open, anyone, any number of times).
 import { h, clear, modal, confirm, field, seg, timeAgo } from "../../js/ui.js";
 import { shrinkImage } from "../../js/images.js";
-import { businessKey, dateOfKey } from "../../js/tv-shared.js";
+import { businessKey, dateOfKey, WEEKDAYS } from "../../js/tv-shared.js";
+import { isRecurring, roundOf, nextRound, scheduleLabel, whenLabel } from "./schedule.js";
 
 const add = (el, ...kids) => { el.append(...kids.flat(Infinity).filter((k) => k != null && k !== false)); return el; };
 const GREEN_EVERY = 5;
@@ -59,32 +62,52 @@ export function mount(el, ctx) {
     return () => {
       if (notReady()) return;
       const open = quests.filter((q) => q.open);
-      const ready = open.filter((q) => !isLocked(q)), locked = open.filter(isLocked).sort((a, b) => a.unlockOn.localeCompare(b.unlockOn));
+      const unlocked = open.filter((q) => !isLocked(q));
+      const ready = unlocked.filter((q) => !doneThisRound(q)), resting = unlocked.filter(doneThisRound);
+      const locked = open.filter(isLocked).sort((a, b) => a.unlockOn.localeCompare(b.unlockOn));
       add(clear(pane), h("div", { class: "sq-split" },
         h("div", { class: "sq-col-quests" },
           h("h3", { class: "sq-h" }, "🗺️ Side Quests"),
           ready.length ? h("div", { class: "sq-list" }, ready.map(questCard))
             : h("div", { class: "card empty-card" }, h("p", {}, "No side quests right now."), manage ? h("button", { class: "btn primary", type: "button", onclick: () => ctx.navigate(`${ctx.base}/edit`) }, "Add quests") : null),
+          resting.length ? [h("h3", { class: "tv-h3" }, "✅ Done for now"), h("div", { class: "sq-list" }, resting.map(questCard))] : null,
           locked.length ? [h("h3", { class: "tv-h3" }, "🔒 Coming up"), h("div", { class: "sq-list" }, locked.map(questCard))] : null),
         leaderPanel()));
     };
   }
+  // Recurring quests: the current opening, and whether someone has already done it.
+  function today() { return businessKey(); }
+  function roundSubs(q) { const r = roundOf(q, today()); return r ? subs.filter((s) => s.questId === q.id && s.round === r) : []; }
+  function doneThisRound(q) {
+    if (!isRecurring(q)) return false;
+    if (!roundOf(q, today())) return true; // e.g. a weekly quest with no days picked
+    return roundSubs(q).some((s) => s.status === "approved");
+  }
   function questCard(q) {
-    const mine = subs.find((s) => s.questId === q.id && s.uid === myUid() && s.status === "pending");
-    const other = !q.repeat && subs.find((s) => s.questId === q.id && s.status === "pending" && s.uid !== myUid());
+    const rec = isRecurring(q);
+    const pool = rec ? roundSubs(q) : subs.filter((s) => s.questId === q.id);
+    const mine = pool.find((s) => s.uid === myUid() && s.status === "pending");
+    const other = (!q.repeat || rec) && pool.find((s) => s.status === "pending" && s.uid !== myUid());
     const last = subs.find((s) => s.questId === q.id && s.status === "approved");
     const locked = isLocked(q);
+    const done = rec && !locked && doneThisRound(q);
     let action;
-    if (locked) action = h("span", { class: "chip chip-soon" }, `Unlocks ${unlockLabel(q)}`);
+    if (locked) action = h("span", { class: "chip chip-soon" }, `${rec ? "Starts" : "Unlocks"} ${unlockLabel(q)}`);
+    else if (done) {
+      const by = roundSubs(q).find((s) => s.status === "approved");
+      const next = nextRound(q, today());
+      action = h("div", { class: "sq-done" }, by ? h("span", { class: "chip chip-ok" }, `✓ ${by.name}`) : null,
+        next ? h("span", { class: "muted small" }, `Back ${whenLabel(next, today())}`) : null);
+    }
     else if (mine) action = h("div", { class: "sq-actions" }, h("span", { class: "chip chip-soon" }, "Waiting for approval"),
       h("button", { class: "btn small ghost", type: "button", onclick: () => withdraw(mine) }, "Take back"));
     else if (other) action = h("span", { class: "muted small" }, `${other.name} is waiting on approval`);
     else action = h("button", { class: "btn primary", type: "button", onclick: () => signOff(q) }, "✓ I did it");
-    return h("article", { class: `card sq-quest${locked ? " locked" : ""}` },
+    return h("article", { class: `card sq-quest${locked ? " locked" : ""}${done ? " done" : ""}` },
       h("div", { class: "sq-quest-main" },
-        h("div", { class: "sq-quest-title" }, q.title, worthChip(q.stars), q.repeat ? h("span", { class: "chip chip-ok" }, "Repeats") : null),
+        h("div", { class: "sq-quest-title" }, q.title, worthChip(q.stars), typeChip(q)),
         q.details ? h("p", { class: "sq-quest-details" }, q.details) : null,
-        q.repeat && last ? h("p", { class: "muted small" }, `Last done by ${last.name} · ${timeAgo(last.at)}`) : null),
+        q.repeat && !done && last ? h("p", { class: "muted small" }, `Last done by ${last.name} · ${timeAgo(last.at)}`) : null),
       action);
   }
   async function withdraw(s) {
@@ -114,7 +137,10 @@ export function mount(el, ctx) {
       field("Photo", pic, `Show it off. A manager will check it before you get your ${worth(q.stars) > 1 ? `${worth(q.stars)} stars` : "star"}.`), field("Note", note)),
     actions: [{ label: "Cancel", kind: "ghost", value: false }, { label: "Sign off", kind: "primary", onClick: async () => {
       if (uploading) throw new Error("Wait for the photo to finish uploading.");
-      await ctx.api.submitQuest(ctx.session(), q, { note: note.value.trim(), photo });
+      // Recurring: check nobody beat them to it while the form was open.
+      const round = isRecurring(q) ? roundOf(q, today()) : "";
+      if (round && roundSubs(q).some((s) => s.status !== "rejected" && s.uid !== myUid())) throw new Error("Someone already signed this one off. It opens again soon.");
+      await ctx.api.submitQuest(ctx.session(), q, { note: note.value.trim(), photo, round });
       ctx.log("Signed off side quest", q.title); ctx.toast("Sent for approval ⭐");
       return true;
     } }] });
@@ -281,7 +307,7 @@ export function mount(el, ctx) {
             s.photo ? h("img", { class: "sq-review-img", src: s.photo, alt: "", onclick: () => bigPhoto(s) }) : h("div", { class: "sq-review-img none" }, "No photo"),
             h("div", { class: "sq-quest-main" },
               h("div", { class: "sq-quest-title" }, s.questTitle, worthChip(s.stars)),
-              h("span", { class: "muted small" }, `${s.name} · ${timeAgo(s.at)}`),
+              h("span", { class: "muted small" }, `${s.name} · ${timeAgo(s.at)}${s.round ? ` · for ${dateOfKey(s.round).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}` : ""}`),
               s.note ? h("p", { class: "sugg-quote" }, s.note) : null,
               h("div", { class: "sq-actions" },
                 h("button", { class: "btn primary", type: "button", onclick: () => decide(s, q, "approved") }, "★ Approve"),
@@ -326,14 +352,14 @@ export function mount(el, ctx) {
       if (notReady()) return;
       const sorted = [...quests].sort((a, b) => Number(b.open) - Number(a.open) || (a.unlockOn || "").localeCompare(b.unlockOn || "") || a.title.localeCompare(b.title));
       add(clear(pane),
-        h("div", { class: "pane-head" }, h("p", { class: "muted" }, "One-time quests come off the board once approved. Repeating ones stay up."),
+        h("div", { class: "pane-head" }, h("p", { class: "muted" }, "One-time quests come off the board once approved. Recurring ones reopen on their schedule. Anytime ones stay up."),
           h("button", { class: "btn primary", type: "button", onclick: () => editQuest(null) }, "+ New quest")),
         sorted.length ? h("div", { class: "rows" }, sorted.map((q) => {
           const done = subs.filter((s) => s.questId === q.id && s.status === "approved").length;
           return h("button", { type: "button", class: `row${q.open ? "" : " row-off"}`, onclick: () => editQuest(q) },
             h("span", { class: "row-main" },
               h("span", { class: "row-title" }, q.title,
-                worthChip(q.stars), q.repeat ? h("span", { class: "chip chip-ok" }, "Repeats") : null,
+                worthChip(q.stars), typeChip(q),
                 !q.open ? h("span", { class: "chip chip-off" }, done ? "Done" : "Closed") : null,
                 q.open && isLocked(q) ? h("span", { class: "chip chip-soon" }, `Unlocks ${unlockLabel(q)}`) : null),
               h("span", { class: "row-sub" }, [q.details, done ? `${done}× approved` : ""].filter(Boolean).join(" · "))),
@@ -345,7 +371,32 @@ export function mount(el, ctx) {
     const title = h("input", { class: "input", maxlength: "120", value: q?.title || "", placeholder: "e.g. Deep clean the walk-in fridge" });
     const details = h("textarea", { class: "input textarea", rows: "3", maxlength: "1000", placeholder: "What 'done' looks like (optional)" }, q?.details || "");
     const unlock = h("input", { class: "input", type: "date", value: q?.unlockOn || "" });
-    let repeat = !!q?.repeat, open = q ? q.open : true, stars = worth(q?.stars);
+    let kind = isRecurring(q) ? "recurring" : q?.repeat ? "anytime" : "once";
+    let open = q ? q.open : true, stars = worth(q?.stars);
+    let every = isRecurring(q) ? q.every : "week";
+    let weekdays = new Set(q?.every === "week" ? q.on || [] : [new Date().getDay()]);
+    const dom = h("select", { class: "input sq-dom" }, Array.from({ length: 31 }, (_, i) => i + 1).map((n) =>
+      h("option", { value: n, selected: (q?.every === "month" ? q.on?.[0] || 1 : 1) === n }, n === 31 ? "Last day of the month" : `The ${n}${["th", "st", "nd", "rd"][n % 10 > 3 || [11, 12, 13].includes(n) ? 0 : n % 10]}`)));
+
+    // The schedule picker only shows for recurring quests.
+    const schedBox = h("div", { class: "form" });
+    const unlockHint = h("span", {});
+    const unlockField = field("Unlocks on (optional)", unlock, unlockHint);
+    const paintSched = () => {
+      clear(schedBox);
+      unlockField.querySelector(".field-label")?.replaceChildren(kind === "recurring" ? "Starts on (optional)" : "Unlocks on (optional)");
+      unlockHint.textContent = kind === "recurring" ? "Leave blank to start now."
+        : "Shows as “Coming up” until this date, e.g. taking down holiday decorations. Leave blank to open now.";
+      if (kind !== "recurring") return;
+      const dayBtns = h("div", { class: "sq-days" }, [1, 2, 3, 4, 5, 6, 0].map((d) => h("button", { type: "button", class: `sq-day${weekdays.has(d) ? " on" : ""}`, "aria-pressed": String(weekdays.has(d)),
+        onclick: (e) => { weekdays.has(d) ? weekdays.delete(d) : weekdays.add(d); e.currentTarget.classList.toggle("on", weekdays.has(d)); e.currentTarget.setAttribute("aria-pressed", String(weekdays.has(d))); } }, WEEKDAYS[d].slice(0, 3))));
+      add(schedBox,
+        field("How often", seg([{ value: "day", label: "Daily" }, { value: "week", label: "Weekly" }, { value: "month", label: "Monthly" }], every, (v) => { every = v; paintSched(); }),
+          "It reopens at 5 AM on those days."),
+        every === "week" ? field("On", dayBtns) : null,
+        every === "month" ? field("On", dom) : null);
+    };
+
     const actions = [];
     if (q) actions.push({ label: "Delete", kind: "ghost", onClick: async () => {
       if (!(await confirm(`Delete “${q.title}”?`, "It comes off the board. Stars already earned stay.", "Delete"))) return false;
@@ -355,19 +406,35 @@ export function mount(el, ctx) {
     actions.push({ label: "Cancel", kind: "ghost", value: false }, { label: q ? "Save" : "Add quest", kind: "primary", onClick: async () => {
       const t = title.value.trim();
       if (!t) throw new Error("Give the quest a name.");
-      await ctx.api.saveQuest(ctx.session(), q?.id, { title: t, details: details.value.trim(), repeat, open, stars, unlockOn: unlock.value || "" });
+      let sched = { every: "", on: [] };
+      if (kind === "recurring") {
+        if (every === "week" && !weekdays.size) throw new Error("Pick at least one day.");
+        sched = { every, on: every === "week" ? [...weekdays].sort() : every === "month" ? [Number(dom.value)] : [] };
+      }
+      await ctx.api.saveQuest(ctx.session(), q?.id, { title: t, details: details.value.trim(), repeat: kind !== "once", ...sched, open, stars, unlockOn: unlock.value || "" });
       ctx.log(q ? "Edited side quest" : "Added side quest", t); ctx.toast(q ? "Saved" : "Quest added");
       return true;
     } });
-    await modal({ title: q ? "Edit quest" : "New quest", body: h("div", { class: "form" },
+    const typeHelp = h("span", {});
+    const helpFor = { once: "Comes off the board once approved.", recurring: "Reopens on a schedule. One person can do it each time it opens.", anytime: "Always open. Anyone can do it as often as they like." };
+    const setKind = (v) => { kind = v; typeHelp.textContent = helpFor[v]; paintSched(); };
+    const body = h("div", { class: "form" },
       field("Quest", title), field("Details", details),
       field("Worth", seg([1, 2, 3, 4, 5].map((n) => ({ value: n, label: `${n} ★` })), stars, (v) => { stars = v; }), "Harder jobs can be worth more. Most are 1."),
-      field("Type", seg([{ value: false, label: "One time" }, { value: true, label: "Repeats" }], repeat, (v) => { repeat = v; }),
-        "One time: off the board once approved. Repeats: stays up and can earn stars again and again."),
-      field("Unlocks on (optional)", unlock, "Shows as “Coming up” until this date, e.g. taking down holiday decorations. Leave blank to open now."),
-      field("On the board", seg([{ value: true, label: "Open" }, { value: false, label: "Closed", cls: "danger" }], open, (v) => { open = v; }))),
-    actions });
+      field("Type", seg([{ value: "once", label: "One time" }, { value: "recurring", label: "Recurring" }, { value: "anytime", label: "Anytime" }], kind, setKind), typeHelp),
+      schedBox,
+      unlockField,
+      field("On the board", seg([{ value: true, label: "Open" }, { value: false, label: "Closed", cls: "danger" }], open, (v) => { open = v; })));
+    setKind(kind);
+    await modal({ title: q ? "Edit quest" : "New quest", body, actions });
   }
+}
+
+// Little tag for how a quest repeats.
+function typeChip(q) {
+  if (isRecurring(q)) return h("span", { class: "chip chip-ok" }, `🔁 ${scheduleLabel(q)}`);
+  if (q.repeat) return h("span", { class: "chip chip-ok" }, "Anytime");
+  return null;
 }
 
 // How many stars a record is worth: the quest's stars when it was signed off (1 for older ones);

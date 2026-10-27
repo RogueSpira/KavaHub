@@ -368,15 +368,22 @@ if (!fresh) {
   for (let i = 0; i < 4; i++) sub(under, "Daniel", 30 + i, "approved");
   sub(fridge, "Wheatyn", 0.2, "pending", { note: "Threw out two expired syrups.", photo: "/board/assets/drinks/upnext.jpg", stars: 3 });
   sub(under, "Josh", 2, "rejected", { reviewNote: "Still a lot of dust behind the second cooler." });
+  // Recurring quests: reopen on a schedule, one person per round.
+  const menus = q("Wipe down the menu boards", "Glass cleaner on the boards and the TV screens.", true); menus.every = "day"; menus.on = [];
+  const cups = q("Restock the to-go cups and lids", "Fill both sleeves at the bar, extras from storage.", true); cups.every = "week"; cups.on = [1, 4];
+  const ice = q("Clean the ice machine", "Empty, sanitize, let it refill. Follow the sheet on the side.", true); ice.every = "month"; ice.on = [1]; ice.stars = 2;
+  const t = new Date(Date.now() - 5 * 3600e3); const todayKey = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
+  sub(menus, "Wheatyn", 0.1, "approved", { round: todayKey });
 }
 const meName = () => me()?.name;
 const questLevel = () => { const u = me(); return !u ? 0 : u.roleId === "owner" ? 2 : (u.overrides.quests ?? store.roles[u.roleId]?.perms.quests ?? 0); };
 const needQuest = (lvl) => { if (questLevel() < lvl) throw new Error("Missing or insufficient permissions."); };
 export function watchQuests(cb) { return watch(() => cb(structuredClone(quests))); }
 const unlockAtOf = (key) => { if (!key) return null; const [y, m, d] = key.split("-").map(Number); return new Date(y, m - 1, d, 5); };
-export async function saveQuest(session, qid, { title, details, repeat, open, stars = 1, unlockOn = "" }) {
+export async function saveQuest(session, qid, { title, details, repeat, open, stars = 1, unlockOn = "", every = "", on = [] }) {
   await wait(120); needQuest(2);
-  const data = { title, details, repeat: !!repeat, open: open !== false, stars, unlockOn, unlockAt: unlockAtOf(unlockOn), updatedAt: now(), updatedBy: meName() };
+  // every/on: the schedule for recurring quests (see tools/quests/schedule.js); "" = not recurring.
+  const data = { title, details, repeat: !!repeat || !!every, every: every || "", on: every ? on : [], open: open !== false, stars, unlockOn, unlockAt: unlockAtOf(unlockOn), updatedAt: now(), updatedBy: meName() };
   if (qid) { Object.assign(quests.find((x) => x.id === qid), data); changed(); return qid; }
   const x = { id: id("q"), ...data, createdAt: now(), createdBy: meName() };
   quests.unshift(x); changed(); return x.id;
@@ -384,12 +391,13 @@ export async function saveQuest(session, qid, { title, details, repeat, open, st
 export async function setQuestOpen(session, qid, open) { await wait(80); needQuest(2); Object.assign(quests.find((x) => x.id === qid), { open, updatedAt: now() }); changed(); }
 export async function deleteQuest(qid) { await wait(80); needQuest(2); const i = quests.findIndex((x) => x.id === qid); if (i >= 0) quests.splice(i, 1); changed(); }
 export function watchQuestSubs(cb) { return watch(() => cb(structuredClone(qsubs).sort((a, b) => b.at - a.at))); }
-export async function submitQuest(session, quest, { note, photo }) {
+export async function submitQuest(session, quest, { note, photo, round = "" }) {
   await wait(150); needQuest(1);
   const qq = quests.find((x) => x.id === quest.id);
   if (!qq?.open) throw new Error("That quest is closed.");
   if (qq.unlockAt && qq.unlockAt > now()) throw new Error("Missing or insufficient permissions.");
-  qsubs.unshift({ id: id("qs"), questId: quest.id, questTitle: quest.title, uid: session.uid, name: session.me.name, note: note || "", photo: photo || "", at: now(), status: "pending", stars: qq.stars || 1 });
+  if (round && qsubs.some((s) => s.questId === quest.id && s.round === round && s.status !== "rejected")) throw new Error("Someone already did this one. It opens again soon.");
+  qsubs.unshift({ id: id("qs"), ...(round ? { round } : {}), questId: quest.id, questTitle: quest.title, uid: session.uid, name: session.me.name, note: note || "", photo: photo || "", at: now(), status: "pending", stars: qq.stars || 1 });
   changed();
 }
 export async function reviewQuestSub(session, sub, { status, reviewNote, closeQuest }) {

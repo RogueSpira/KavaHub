@@ -512,6 +512,12 @@ button.cl-row:active { transform: scale(.99); }
 .sq-list { display: grid; gap: 10px; }
 .sq-quest { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .sq-quest.locked { opacity: .6; border-style: dashed; }
+.sq-quest.done { opacity: .75; }
+.sq-done { display: grid; justify-items: end; gap: 4px; }
+.sq-days { display: flex; flex-wrap: wrap; gap: 6px; }
+.sq-day { min-width: 52px; min-height: 40px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--line, rgba(255,255,255,.15)); background: transparent; color: var(--cream-dim); font-family: var(--f-label); font-weight: 600; font-size: 14.5px; }
+.sq-day.on { background: var(--lime); border-color: var(--lime); color: var(--ink); }
+.sq-dom { max-width: 260px; }
 .sq-quest-main { flex: 1 1 260px; min-width: 0; display: grid; gap: 4px; }
 .sq-quest-title { font-family: var(--f-label); font-weight: 700; font-size: 18.5px; }
 .sq-quest-details { color: var(--cream-dim); font-size: 15.5px; white-space: pre-wrap; overflow-wrap: anywhere; }

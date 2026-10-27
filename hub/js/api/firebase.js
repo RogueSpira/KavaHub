@@ -235,8 +235,9 @@ export function watchQuests(cb) {
 }
 // unlockOn: "2026-11-01" or "" — opens at 5 AM that day (the start of the business day).
 const unlockAtOf = (key) => { if (!key) return null; const [y, m, d] = key.split("-").map(Number); return F.Timestamp.fromDate(new Date(y, m - 1, d, 5)); };
-export async function saveQuest(session, qid, { title, details, repeat, open, stars = 1, unlockOn = "" }) {
-  const data = { title, details, repeat: !!repeat, open: open !== false, stars, unlockOn, unlockAt: unlockAtOf(unlockOn), updatedAt: F.serverTimestamp(), updatedBy: session.me.name };
+export async function saveQuest(session, qid, { title, details, repeat, open, stars = 1, unlockOn = "", every = "", on = [] }) {
+  // every/on: the schedule for recurring quests (see tools/quests/schedule.js); "" = not recurring.
+  const data = { title, details, repeat: !!repeat || !!every, every: every || "", on: every ? on : [], open: open !== false, stars, unlockOn, unlockAt: unlockAtOf(unlockOn), updatedAt: F.serverTimestamp(), updatedBy: session.me.name };
   if (qid) { await F.updateDoc(docRef(`${SQ}/items/${qid}`), data); return qid; }
   const ref = await F.addDoc(col(`${SQ}/items`), { ...data, createdAt: F.serverTimestamp(), createdBy: session.me.name });
   return ref.id;
@@ -248,8 +249,9 @@ export function watchQuestSubs(cb) {
     (q) => cb(q.docs.map((d) => { const x = d.data(EST); return { id: d.id, ...x, at: tsToDate(x.at), reviewedAt: tsToDate(x.reviewedAt) }; })),
     (e) => { console.warn("[hub] quest sign-offs", e); cb(null, e); });
 }
-export const submitQuest = (session, quest, { note, photo }) => F.addDoc(col(`${SQ}/subs`), {
-  questId: quest.id, questTitle: quest.title, uid: session.uid, name: session.me.name,
+// round: for a recurring quest, the date it opened that this sign-off counts for.
+export const submitQuest = (session, quest, { note, photo, round = "" }) => F.addDoc(col(`${SQ}/subs`), {
+  ...(round ? { round } : {}), questId: quest.id, questTitle: quest.title, uid: session.uid, name: session.me.name,
   note: note || "", photo: photo || "", at: F.serverTimestamp(), status: "pending", stars: quest.stars || 1,
 });
 // Approve or send back. Approving a one-time quest also takes it off the board.

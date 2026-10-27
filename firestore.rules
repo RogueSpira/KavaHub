@@ -152,7 +152,8 @@ service cloud.firestore {
 
       // Side Quests: the board of extra jobs. Use sees the board and signs off ("I did it",
       // optional photo) in their own name; Manage adds quests and approves or sends back sign-offs.
-      // A quest can be set to unlock on a date (e.g. taking down seasonal decorations).
+      // A quest can be set to unlock on a date (e.g. taking down seasonal decorations), and can
+      // reopen on a schedule (every/on); a sign-off for a scheduled quest notes which round it was for.
       // Each approved sign-off is a star.
       match /tools-data/quests/items/{id} {
         function validQuest(d) {
@@ -162,16 +163,18 @@ service cloud.firestore {
             && d.get('stars', 1) is int && d.get('stars', 1) >= 1 && d.get('stars', 1) <= 5
             && d.get('unlockOn', '') is string && d.get('unlockOn', '').size() <= 10
             && (d.get('unlockAt', null) == null || d.get('unlockAt', null) is timestamp)
+            && d.get('every', '') in ['', 'day', 'week', 'month']
+            && d.get('on', []) is list && d.get('on', []).size() <= 7
             && d.updatedAt == request.time && d.updatedBy == me(loc).name;
         }
         allow read: if can(loc, 'quests', 1);
         allow create: if can(loc, 'quests', 2)
-          && request.resource.data.keys().hasOnly(['title', 'details', 'repeat', 'open', 'stars', 'unlockOn', 'unlockAt', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'])
+          && request.resource.data.keys().hasOnly(['title', 'details', 'repeat', 'every', 'on', 'open', 'stars', 'unlockOn', 'unlockAt', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'])
           && request.resource.data.createdAt == request.time
           && request.resource.data.createdBy == me(loc).name
           && validQuest(request.resource.data);
         allow update: if can(loc, 'quests', 2)
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'details', 'repeat', 'open', 'stars', 'unlockOn', 'unlockAt', 'updatedAt', 'updatedBy'])
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'details', 'repeat', 'every', 'on', 'open', 'stars', 'unlockOn', 'unlockAt', 'updatedAt', 'updatedBy'])
           && validQuest(request.resource.data);
         allow delete: if can(loc, 'quests', 2);
       }
@@ -192,7 +195,8 @@ service cloud.firestore {
         // and quests set to unlock on a date can't be signed off before then.
         allow read: if can(loc, 'quests', 1);
         allow create: if (can(loc, 'quests', 2) && validManual(request.resource.data)) || (can(loc, 'quests', 1)
-          && request.resource.data.keys().hasOnly(['questId', 'questTitle', 'uid', 'name', 'note', 'photo', 'at', 'status', 'stars'])
+          && request.resource.data.keys().hasOnly(['questId', 'questTitle', 'uid', 'name', 'note', 'photo', 'at', 'status', 'stars', 'round'])
+          && request.resource.data.get('round', '') is string && request.resource.data.get('round', '').size() <= 10
           && request.resource.data.uid == request.auth.uid
           && request.resource.data.name == me(loc).name
           && request.resource.data.at == request.time
