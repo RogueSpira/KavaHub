@@ -577,44 +577,62 @@ button.cl-row:active { transform: scale(.99); }
 }
 
 /* ===================== Menu Maker: the printed page ===================== */
-/* Bungee is kept here too (SIL Open Font License, fonts/BUNGEE-OFL.txt) so printed menus never fall back to a plain font. */
+/* Brand standards (BLK TIE, 2026): dark-first ink grounds, Mandarin glow (neon green, bright lime,
+   lagoon teal, cream), Bungee for display, DM Sans for copy, ink labels on bright fills.
+   Bungee is kept here too (SIL Open Font License, fonts/BUNGEE-OFL.txt) so prints never fall back. */
 @font-face { font-family: 'Bungee Menu'; src: url('../fonts/bungee.woff2') format('woff2'); font-weight: 400; font-display: block; }
-/* Brand colors from the express menus: navy boxes, pink names, orange badges, lime band. */
 .mm-page {
-  --mm-navy: #253F8F; --mm-pink: #D7426F; --mm-orange: #F7962B; --mm-lime: #E6ECB6; --mm-green: #86A52A; --mm-cream: #FCF8EE; --mm-red: #C8452B;
-  width: 8.5in; height: 11in; padding: .3in; background: #fff; color: var(--mm-navy); overflow: hidden; position: relative;
+  --ink: #071417; --panel: #123035; --navy: #0C2A30; --cream: #FFF3E0; --cream-dim: #DFE9DC;
+  --neon: #34E209; --lime: #C0FF5B; --teal: #45DBE0;
+  --bg: var(--ink); --frame: var(--navy); --box: var(--panel); --line: var(--teal);
+  --title: var(--neon); --name: var(--cream); --body: var(--cream-dim); --price: var(--lime); --size: var(--teal);
+  --glow-t: 0 0 .5em rgba(52, 226, 9, .55); --glow-b: 0 0 .9em rgba(69, 219, 224, .35);
+  width: 8.5in; height: 11in; padding: .3in; background: var(--bg); color: var(--body); overflow: hidden; position: relative;
   font-family: 'DM Sans', 'Segoe UI', sans-serif; font-size: 13pt; line-height: 1.25;
   -webkit-print-color-adjust: exact; print-color-adjust: exact;
 }
+.mm-page.mm-light {
+  --bg: #FFF3E0; --frame: #FFF3E0; --box: #FFFDF7; --line: #0C2A30;
+  --title: #0C2A30; --name: #0C2A30; --body: #2C4A4F; --price: #0B7F84; --size: #0B7F84;
+  --glow-t: none; --glow-b: none;
+}
 .mm-page.mm-half { width: 5.5in; height: 8.5in; padding: .2in; font-size: 9.5pt; }
-.mm-frame { min-height: 100%; background: var(--mm-lime); border-radius: 1em; padding: 1em 1.1em 1.2em; display: flex; flex-direction: column; gap: 1em;
-  background-image: repeating-linear-gradient(-28deg, transparent 0 3.2em, rgba(255, 255, 255, .28) 3.2em 4.4em); }
-.mm-addr { text-align: center; font-family: 'Bungee Menu', 'Bungee', sans-serif; font-size: .62em; letter-spacing: .12em; text-transform: uppercase; color: var(--mm-navy); }
-.mm-head { background: var(--mm-cream); border: .16em solid var(--mm-navy); border-radius: 1em; box-shadow: 0 .38em 0 var(--mm-pink); padding: .55em 1em .6em; text-align: center; }
-.mm-logo { font-family: 'Bungee Menu', 'Bungee', sans-serif; font-size: 3.6em; line-height: 1.05; color: var(--mm-green); -webkit-text-stroke: .025em #2c3a10; letter-spacing: .02em; }
-.mm-tag { font-family: 'Bungee Menu', 'Bungee', sans-serif; font-size: .9em; letter-spacing: .14em; text-transform: uppercase; color: var(--mm-pink); margin-top: .15em; }
-.mm-event { align-self: center; font-family: 'Bungee Menu', 'Bungee', sans-serif; font-size: 1.15em; letter-spacing: .06em; text-transform: uppercase; color: #fff; background: var(--mm-pink);
-  border: .14em solid var(--mm-navy); border-radius: 999px; padding: .2em 1.1em; box-shadow: 0 .22em 0 var(--mm-navy); text-align: center; }
-.mm-sec { background: var(--mm-cream); border: .14em solid var(--mm-navy); border-radius: 1em; padding: .8em 1.1em .7em; box-shadow: 0 .22em 0 var(--mm-navy); }
-.mm-sec-title { font-family: 'Bungee Menu', 'Bungee', sans-serif; font-size: 1.8em; line-height: 1.1; color: var(--mm-navy); text-transform: uppercase; }
-.mm-sub { font-weight: 700; font-size: .78em; margin-top: .2em; }
-.mm-sized-head { display: grid; align-items: end; gap: 0 .2em; margin-top: .45em; padding-bottom: .3em; border-bottom: .12em dashed var(--mm-navy); }
-.mm-note { font-weight: 700; font-size: .62em; }
-.mm-size { font-family: 'Bungee Menu', 'Bungee', sans-serif; font-size: .78em; text-align: center; text-transform: uppercase; }
-.mm-size.first, .mm-p.first { color: var(--mm-red); }
-.mm-row { padding: .55em 0; border-bottom: .1em dotted rgba(37, 63, 143, .6); }
+.mm-frame { min-height: 100%; border-radius: 1em; padding: 1em 1.1em 1.2em; display: flex; flex-direction: column; gap: 1em; position: relative; overflow: hidden;
+  background: radial-gradient(ellipse 80% 40% at 50% 0%, rgba(52, 226, 9, .16), transparent 70%),
+    repeating-conic-gradient(from 0deg at 50% 0%, rgba(192, 255, 91, .05) 0deg 6deg, transparent 6deg 12deg), var(--frame); }
+.mm-light .mm-frame { background: repeating-conic-gradient(from 0deg at 50% 0%, rgba(52, 226, 9, .07) 0deg 6deg, transparent 6deg 12deg), var(--frame); border: .1em solid rgba(12, 42, 48, .15); }
+.mm-addr { text-align: center; font-family: 'DM Sans', sans-serif; font-weight: 700; font-size: .62em; letter-spacing: .3em; text-transform: uppercase; color: var(--body); }
+.mm-head { text-align: center; display: grid; justify-items: center; gap: .35em; padding: .3em 0 .2em; }
+.mm-light .mm-head { background: var(--ink); border-radius: 1em; padding: .9em 1em .8em; }
+.mm-logo { width: 78%; height: auto; display: block; }
+.mm-tag { font-family: 'Bungee Menu', 'Bungee', sans-serif; font-size: .95em; letter-spacing: .14em; text-transform: uppercase; color: var(--lime); text-shadow: 0 0 .5em rgba(192, 255, 91, .5); }
+.mm-event { align-self: center; font-family: 'Bungee Menu', 'Bungee', sans-serif; font-size: 1.1em; letter-spacing: .06em; text-transform: uppercase; color: var(--ink); background: var(--lime);
+  border-radius: 999px; padding: .25em 1.2em; box-shadow: 0 0 1em rgba(192, 255, 91, .45); text-align: center; }
+.mm-light .mm-event { box-shadow: none; border: .12em solid var(--ink); }
+.mm-sec { background: var(--box); border: .12em solid var(--line); border-radius: 1em; padding: .8em 1.1em .7em; box-shadow: var(--glow-b); }
+.mm-sec-title { font-family: 'Bungee Menu', 'Bungee', sans-serif; font-size: 1.8em; line-height: 1.1; color: var(--title); text-transform: uppercase; text-shadow: var(--glow-t); }
+.mm-light .mm-sec-title { text-decoration: underline; text-decoration-color: var(--neon); text-decoration-thickness: .14em; text-underline-offset: .12em; }
+.mm-sub { font-weight: 700; font-size: .78em; margin-top: .25em; color: var(--body); }
+.mm-sized-head { display: grid; align-items: end; gap: 0 .2em; margin-top: .45em; padding-bottom: .3em; border-bottom: .1em dashed var(--line); }
+.mm-note { font-weight: 700; font-size: .62em; color: var(--body); }
+.mm-size { font-family: 'Bungee Menu', 'Bungee', sans-serif; font-size: .78em; text-align: center; text-transform: uppercase; color: var(--size); }
+.mm-row { padding: .55em 0; border-bottom: .08em dotted color-mix(in srgb, var(--line) 55%, transparent); }
 .mm-row:last-child { border-bottom: 0; padding-bottom: .1em; }
 .mm-sized { display: grid; align-items: center; gap: 0 .2em; }
 .mm-list { display: flex; align-items: center; gap: .8em; }
 .mm-item { flex: 1; min-width: 0; }
-.mm-name { font-family: 'Bungee Menu', 'Bungee', sans-serif; font-size: 1.22em; line-height: 1.12; color: var(--mm-pink); text-transform: uppercase; }
-.mm-desc { font-weight: 600; font-size: .78em; margin-top: .15em; }
-.mm-p { font-family: 'Bungee Menu', 'Bungee', sans-serif; font-size: .9em; text-align: center; }
-.mm-badge { flex-shrink: 0; width: 3.3em; height: 3.3em; border-radius: 50%; display: grid; place-items: center; background: var(--mm-orange);
-  border: .12em dashed var(--mm-navy); outline: .18em solid var(--mm-orange); font-family: 'Bungee Menu', 'Bungee', sans-serif; font-size: .95em; color: var(--mm-navy); }
+.mm-name { font-family: 'Bungee Menu', 'Bungee', sans-serif; font-size: 1.22em; line-height: 1.12; color: var(--name); text-transform: uppercase; }
+.mm-desc { font-weight: 500; font-size: .8em; margin-top: .15em; color: var(--body); }
+.mm-p { font-family: 'Bungee Menu', 'Bungee', sans-serif; font-size: .9em; text-align: center; color: var(--price); }
+.mm-badge { flex-shrink: 0; width: 3.2em; height: 3.2em; border-radius: 50%; display: grid; place-items: center; background: var(--lime);
+  border: .1em dashed var(--ink); outline: .16em solid var(--lime); box-shadow: 0 0 1em rgba(192, 255, 91, .45);
+  font-family: 'Bungee Menu', 'Bungee', sans-serif; font-size: .95em; color: var(--ink); }
+.mm-light .mm-badge { box-shadow: none; }
 .mm-feat { display: inline-block; vertical-align: .25em; margin-left: .5em; font-family: 'DM Sans', sans-serif; font-weight: 700; font-size: .5em; letter-spacing: .06em;
-  text-transform: uppercase; color: #fff; background: var(--mm-navy); border-radius: 999px; padding: .2em .7em; }
-.mm-foot { margin-top: auto; text-align: center; font-family: 'Bungee Menu', 'Bungee', sans-serif; font-size: .78em; letter-spacing: .06em; text-transform: uppercase; color: var(--mm-navy); }
+  text-transform: uppercase; color: var(--ink); background: var(--teal); border-radius: 999px; padding: .2em .7em; }
+.mm-foot { margin-top: auto; text-align: center; font-family: 'Bungee Menu', 'Bungee', sans-serif; font-size: .78em; letter-spacing: .06em; text-transform: uppercase; color: var(--teal); }
+.mm-light .mm-foot { color: var(--title); }
+.mm-zero { text-align: center; font-family: 'DM Sans', sans-serif; font-weight: 700; font-size: .55em; letter-spacing: .3em; text-transform: uppercase; color: var(--body); opacity: .8; }
 
 /* Printing: only the menu sheet(s) print. */
 #mm-print { display: none; }

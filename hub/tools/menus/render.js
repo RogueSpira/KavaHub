@@ -8,8 +8,13 @@ export const PAPERS = {
   letter: { label: "Full page (8.5 × 11)", w: 8.5, h: 11, base: 13 },
   half: { label: "Half page, 2 per sheet (5.5 × 8.5)", w: 5.5, h: 8.5, base: 9.5 },
 };
+// The official Mandarin wordmark (same file the TV board uses).
+export const LOGO = "/board/assets/mandarin-logo.png";
 export const DEFAULT_ADDRESS = "11018 Old Saint Augustine Rd · Mandarin";
-export const DEFAULT_TAGLINE = "Coffee & Cocktails";
+export const DEFAULT_TAGLINE = "Jacksonville's First Kava Bar";
+export const THEMES = { dark: "Dark (brand look)", light: "Light (uses less ink)" };
+// Menus saved before the tagline changed.
+const tagOf = (t) => (t == null || /^coffee\s*&\s*cocktails$/i.test(String(t).trim()) ? DEFAULT_TAGLINE : t);
 
 const money = (v) => {
   const s = String(v ?? "").trim();
@@ -29,15 +34,17 @@ export function renderMenu(menu) {
   const m = menu || {};
   const paper = PAPERS[m.paper] ? m.paper : "letter";
   const sections = (m.sections || []).filter((s) => s.title || (s.items || []).some((i) => i.name));
-  return h("div", { class: `mm-page mm-${paper}` },
+  const tag = tagOf(m.tagline);
+  return h("div", { class: `mm-page mm-${paper}${m.theme === "light" ? " mm-light" : ""}` },
     h("div", { class: "mm-frame" },
-      h("div", { class: "mm-addr" }, m.address ?? DEFAULT_ADDRESS),
+      m.address ?? DEFAULT_ADDRESS ? h("div", { class: "mm-addr" }, m.address ?? DEFAULT_ADDRESS) : null,
       h("div", { class: "mm-head" },
-        h("div", { class: "mm-logo" }, "KAVA & CO."),
-        (m.tagline ?? DEFAULT_TAGLINE) ? h("div", { class: "mm-tag" }, "✦ ", m.tagline ?? DEFAULT_TAGLINE, " ✦") : null),
+        h("img", { class: "mm-logo", src: LOGO, alt: "Kava & Co. Mandarin" }),
+        tag ? h("div", { class: "mm-tag" }, tag) : null),
       m.event ? h("div", { class: "mm-event" }, m.event) : null,
       sections.map(section),
-      m.footer ? h("div", { class: "mm-foot" }, m.footer) : null));
+      m.footer ? h("div", { class: "mm-foot" }, m.footer) : null,
+      h("div", { class: "mm-zero" }, "Good vibes · Zero proof")));
 }
 
 function section(s) {

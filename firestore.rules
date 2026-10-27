@@ -202,18 +202,19 @@ service cloud.firestore {
             && d.tagline is string && d.tagline.size() <= 60
             && d.footer is string && d.footer.size() <= 160
             && d.paper in ['letter', 'half']
+            && d.get('theme', 'dark') in ['dark', 'light']
             && d.sections is list && d.sections.size() <= 8
             && d.updatedAt == request.time && d.updatedBy == me(loc).name;
         }
         allow read: if can(loc, 'menus', 1);
         allow create: if can(loc, 'menus', 1)
-          && request.resource.data.keys().hasOnly(['title', 'event', 'address', 'tagline', 'footer', 'paper', 'sections', 'updatedAt', 'updatedBy', 'createdAt', 'createdBy', 'createdUid'])
+          && request.resource.data.keys().hasOnly(['title', 'event', 'address', 'tagline', 'footer', 'paper', 'theme', 'sections', 'updatedAt', 'updatedBy', 'createdAt', 'createdBy', 'createdUid'])
           && request.resource.data.createdAt == request.time
           && request.resource.data.createdBy == me(loc).name
           && request.resource.data.createdUid == request.auth.uid
           && validMenu(request.resource.data);
         allow update: if can(loc, 'menus', 1)
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'event', 'address', 'tagline', 'footer', 'paper', 'sections', 'updatedAt', 'updatedBy'])
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'event', 'address', 'tagline', 'footer', 'paper', 'theme', 'sections', 'updatedAt', 'updatedBy'])
           && validMenu(request.resource.data);
         allow delete: if can(loc, 'menus', 2) || (can(loc, 'menus', 1) && resource.data.createdUid == request.auth.uid);
       }

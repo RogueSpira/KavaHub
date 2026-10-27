@@ -5,7 +5,7 @@
 //   #/tool/menus/edit/<id>    edit
 // Use = make, edit and print menus, delete your own · Manage = also delete anyone's.
 import { h, clear, confirm, field, seg, timeAgo } from "../../js/ui.js";
-import { renderMenu, fitIt, PAPERS, DEFAULT_ADDRESS, DEFAULT_TAGLINE } from "./render.js";
+import { renderMenu, fitIt, PAPERS, THEMES, DEFAULT_ADDRESS, DEFAULT_TAGLINE, LOGO } from "./render.js";
 
 const add = (el, ...kids) => { el.append(...kids.flat(Infinity).filter((k) => k != null && k !== false)); return el; };
 const uid = () => Math.random().toString(36).slice(2, 9);
@@ -15,7 +15,7 @@ export const TEMPLATES = {
   express: {
     label: "Express menu", blurb: "Lattes by size + signature cocktails, like the one on the bar",
     make: () => ({
-      title: "Express menu", event: "", address: DEFAULT_ADDRESS, tagline: DEFAULT_TAGLINE, footer: "", paper: "letter",
+      title: "Express menu", event: "", address: DEFAULT_ADDRESS, tagline: DEFAULT_TAGLINE, footer: "", paper: "letter", theme: "dark",
       sections: [
         { id: uid(), type: "sized", title: "Lattes", subtitle: "", note: "12oz = hot only", sizes: ["12oz", "16oz", "20oz", "24oz"], items: [
           { id: uid(), name: "Latte", desc: "", prices: ["4.50", "5.00", "5.50", "6.00"] },
@@ -32,13 +32,14 @@ export const TEMPLATES = {
   },
   blank: {
     label: "Blank menu", blurb: "One drinks section to start from",
-    make: () => ({ title: "", event: "", address: DEFAULT_ADDRESS, tagline: DEFAULT_TAGLINE, footer: "", paper: "letter",
+    make: () => ({ title: "", event: "", address: DEFAULT_ADDRESS, tagline: DEFAULT_TAGLINE, footer: "", paper: "letter", theme: "dark",
       sections: [{ id: uid(), type: "list", title: "Tonight's Drinks", subtitle: "", items: [{ id: uid(), name: "", desc: "", price: "" }] }] }),
   },
 };
 
 export function mount(el, ctx) {
   document.fonts?.load?.("16px 'Bungee Menu'").catch(() => {}); // so Print can go straight to the dialog
+  new Image().src = LOGO;
   const [view, arg] = ctx.sub;
   let menus = null, failed = false;
   let paint = () => {};
@@ -162,6 +163,7 @@ function editor(el, ctx, getMenus, getFailed, id, fresh) {
         field("Menu name (for finding it later)", txt(draft, "title", { maxlength: "80", placeholder: "e.g. Halloween trivia express menu" })),
         field("Event banner (optional)", txt(draft, "event", { maxlength: "60", placeholder: "e.g. Trivia Night Specials" }), "Shows as a pink banner under the logo."),
         field("Paper", seg(Object.entries(PAPERS).map(([k, p]) => ({ value: k, label: p.label })), draft.paper || "letter", (v) => { draft.paper = v; touch(); })),
+        field("Look", seg(Object.entries(THEMES).map(([k, l]) => ({ value: k, label: l })), draft.theme === "light" ? "light" : "dark", (v) => { draft.theme = v; touch(); })),
         h("details", {}, h("summary", { class: "muted", style: { cursor: "pointer" } }, "Header & footer text"),
           h("div", { class: "form", style: { marginTop: "10px" } },
             field("Top line", txt(draft, "address", { maxlength: "120" })),
@@ -238,7 +240,8 @@ function editor(el, ctx, getMenus, getFailed, id, fresh) {
     const m = menus.find((x) => x.id === id);
     if (!m) { add(clear(form), h("p", { class: "muted empty" }, "This menu was deleted.")); return; }
     loaded = true;
-    draft = JSON.parse(JSON.stringify({ title: m.title, event: m.event, address: m.address, tagline: m.tagline, footer: m.footer, paper: m.paper, sections: m.sections || [] }));
+    draft = JSON.parse(JSON.stringify({ title: m.title, event: m.event, address: m.address, tagline: m.tagline, footer: m.footer, paper: m.paper, theme: m.theme || "dark", sections: m.sections || [] }));
+    if (/^coffee\s*&\s*cocktails$/i.test(String(draft.tagline || "").trim())) draft.tagline = DEFAULT_TAGLINE;
     for (const s of draft.sections) { s.id ||= uid(); s.items = s.items || []; }
     status.textContent = "";
     build();
@@ -250,7 +253,7 @@ function clean(d) {
   const str = (v, n) => String(v ?? "").trim().slice(0, n);
   return {
     title: str(d.title, 80) || "Untitled menu", event: str(d.event, 80), address: str(d.address, 120), tagline: str(d.tagline, 60), footer: str(d.footer, 160),
-    paper: PAPERS[d.paper] ? d.paper : "letter",
+    paper: PAPERS[d.paper] ? d.paper : "letter", theme: d.theme === "light" ? "light" : "dark",
     sections: (d.sections || []).slice(0, MAX_SECTIONS).map((s) => ({
       id: str(s.id, 12) || uid(), type: s.type === "sized" ? "sized" : "list", title: str(s.title, 40), subtitle: str(s.subtitle, 120),
       ...(s.type === "sized" ? { note: str(s.note, 40), sizes: (s.sizes || []).map((z) => str(z, 10)).filter(Boolean).slice(0, 5) } : {}),
